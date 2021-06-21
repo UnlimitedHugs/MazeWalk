@@ -1,0 +1,3 @@
+[submodule "bevy_miniquad"]
+	path = bevy_miniquad
+	url = https://github.com/smokku/bevy_miniquad
