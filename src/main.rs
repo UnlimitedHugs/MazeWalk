@@ -1,5 +1,6 @@
-mod quads_demo;
 mod rendering;
+mod quads_demo;
+mod shape;
 
 use bevy::{app::App, prelude::*};
 use bevy_miniquad::MiniquadPlugin;

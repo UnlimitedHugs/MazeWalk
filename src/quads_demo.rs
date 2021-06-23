@@ -1,4 +1,5 @@
 use super::rendering::*;
+use super::shape::Quad;
 use bevy::{math::vec2, prelude::*};
 
 pub struct QuadsDemoPlugin;
@@ -16,7 +17,7 @@ fn spawn_quads(
 	mut textures: ResMut<Assets<Texture>>,
 	mut shaders: ResMut<Assets<Shader>>,
 ) {
-	let mesh = meshes.add(Mesh::quad(0.5));
+	let mesh = meshes.add(Quad::new(vec2(1.0, 1.0)).into());
 	let texture = textures.add(Texture {
 		data: vec![
 			0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00,
@@ -68,7 +69,8 @@ mod shader {
 	use super::*;
 
 	pub const VERTEX: &str = r#"#version 100
-	attribute vec2 pos;
+	attribute vec3 pos;
+	attribute vec3 normal;
 	attribute vec2 uv;
 
 	uniform vec2 offset;
@@ -76,7 +78,7 @@ mod shader {
 	varying lowp vec2 texcoord;
 
 	void main() {
-		gl_Position = vec4(pos + offset, 0, 1);
+		gl_Position = vec4(pos.xy + offset, 0, 1);
 		texcoord = uv;
 	}"#;
 

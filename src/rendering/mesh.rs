@@ -1,35 +1,30 @@
 use super::draw::{ContextResources, MeshBufferSet};
-use bevy::{math::vec2, prelude::*, reflect::TypeUuid};
+use bevy::{prelude::*, reflect::TypeUuid};
 use bevy_miniquad::Context;
 use miniquad::{Buffer, BufferType, VertexAttribute, VertexFormat};
 
 #[repr(C)]
 pub struct Vertex {
-	pub pos: Vec2,
+	pub pos: Vec3,
+	pub normal: Vec3,
 	pub uv: Vec2,
 }
 
 impl Vertex {
 	pub fn attributes<'a>() -> Vec<VertexAttribute> {
 		vec![
-			VertexAttribute::new("pos", VertexFormat::Float2),
+			VertexAttribute::new("pos", VertexFormat::Float3),
+			VertexAttribute::new("normal", VertexFormat::Float3),
 			VertexAttribute::new("uv", VertexFormat::Float2),
 		]
-	}
-
-	pub fn new(pos_x: f32, pos_y: f32, uv_x: f32, uv_y: f32) -> Self {
-		Self {
-			pos: vec2(pos_x, pos_y),
-			uv: vec2(uv_x, uv_y),
-		}
 	}
 }
 
 #[derive(TypeUuid)]
 #[uuid = "f8d1bdbe-a1ed-41b0-8e45-668e1dcb9899"]
 pub struct Mesh {
-	vertices: Vec<Vertex>,
-	indices: Vec<u16>,
+	pub vertices: Vec<Vertex>,
+	pub indices: Vec<u16>,
 }
 
 pub fn upload_meshes(
@@ -63,20 +58,6 @@ pub fn upload_meshes(
 					panic!("uploading duplicate mesh");
 				}
 			}
-		}
-	}
-}
-
-impl Mesh {
-	pub fn quad(size: f32) -> Self {
-		Self {
-			vertices: vec![
-				Vertex::new(-size, -size, 0., 0.),
-				Vertex::new(size, -size, 1., 0.),
-				Vertex::new(size, size, 1., 1.),
-				Vertex::new(-size, size, 0., 1.),
-			],
-			indices: vec![0, 1, 2, 0, 2, 3],
 		}
 	}
 }
