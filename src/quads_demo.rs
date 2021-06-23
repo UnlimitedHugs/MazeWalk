@@ -1,10 +1,11 @@
 use super::rendering::*;
-use bevy::{math::vec3, prelude::*};
+use bevy::{math::vec2, prelude::*};
 
 pub struct QuadsDemoPlugin;
 impl Plugin for QuadsDemoPlugin {
 	fn build(&self, app: &mut AppBuilder) {
-		app.add_startup_system(spawn_quads.system())
+		app.register_shader_uniforms::<QuadUniforms>()
+			.add_startup_system(spawn_quads.system())
 			.add_system(update_quads.system());
 	}
 }
@@ -36,13 +37,13 @@ fn spawn_quads(
 	));
 
 	for i in 0..10 {
-		commands
-			.spawn()
-			.insert(DemoQuad { index: i })
-			.insert(GlobalTransform::identity())
-			.insert(mesh.clone())
-			.insert(texture.clone())
-			.insert(shader.clone());
+		commands.spawn_bundle((
+			DemoQuad { index: i },
+			mesh.clone(),
+			texture.clone(),
+			shader.clone(),
+			QuadUniforms::default(),
+		));
 	}
 }
 
@@ -50,10 +51,16 @@ struct DemoQuad {
 	index: u32,
 }
 
-fn update_quads(mut query: Query<(&DemoQuad, &mut GlobalTransform)>, time: Res<Time>) {
-	for (quad, mut tx) in query.iter_mut() {
+#[repr(C)]
+#[derive(Default)]
+struct QuadUniforms {
+	position: Vec2,
+}
+
+fn update_quads(mut query: Query<(&DemoQuad, &mut QuadUniforms)>, time: Res<Time>) {
+	for (quad, mut uniforms) in query.iter_mut() {
 		let t = time.seconds_since_startup() + quad.index as f64 * 0.3;
-		tx.translation = vec3(t.sin() as f32 * 0.5, (t * 3.).cos() as f32 * 0.5, 0.0);
+		uniforms.position = vec2(t.sin() as f32 * 0.5, (t * 3.).cos() as f32 * 0.5);
 	}
 }
 

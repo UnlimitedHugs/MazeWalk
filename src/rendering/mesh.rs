@@ -1,4 +1,4 @@
-use super::drawing::{ContextResources, MeshBufferSet};
+use super::draw::{ContextResources, MeshBufferSet};
 use bevy::{math::vec2, prelude::*, reflect::TypeUuid};
 use bevy_miniquad::Context;
 use miniquad::{Buffer, BufferType, VertexAttribute, VertexFormat};

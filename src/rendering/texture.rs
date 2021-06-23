@@ -1,4 +1,4 @@
-use super::drawing::ContextResources;
+use super::draw::ContextResources;
 use bevy::{prelude::*, reflect::TypeUuid};
 use bevy_miniquad::Context;
 use miniquad::{Texture as ContextTexture, TextureFormat as ContextTextureFormat, TextureParams};

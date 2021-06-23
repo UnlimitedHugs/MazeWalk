@@ -1,4 +1,4 @@
-use super::drawing::ContextResources;
+use super::draw::ContextResources;
 use super::mesh::Vertex;
 use bevy::{prelude::*, reflect::TypeUuid};
 use bevy_miniquad::Context;

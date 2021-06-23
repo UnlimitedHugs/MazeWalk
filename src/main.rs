@@ -1,4 +1,4 @@
-mod quads;
+mod quads_demo;
 mod rendering;
 
 use bevy::{app::App, prelude::*};
@@ -10,6 +10,6 @@ pub fn main() {
 		.add_plugins(DefaultPlugins)
 		.add_plugin(MiniquadPlugin)
 		.add_plugin(RenderingPlugin)
-		.add_plugin(quads::QuadsDemoPlugin)
+		.add_plugin(quads_demo::QuadsDemoPlugin)
 		.run();
 }

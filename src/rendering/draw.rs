@@ -1,8 +1,7 @@
-pub use mesh::{Mesh, Vertex};
-pub use shader::{Shader, ShaderMetadata, UniformType};
-pub use texture::{Texture, TextureFormat};
-
-use super::*;
+use super::mesh::Mesh;
+use super::shader::Shader;
+use super::texture::Texture;
+use bevy::ecs::component::Component;
 use bevy::{asset::HandleId, prelude::*, utils::HashMap};
 use bevy_miniquad::Context;
 use miniquad::{Bindings, Buffer, Pipeline, Texture as ContextTexture};
@@ -19,23 +18,23 @@ pub struct MeshBufferSet {
 	pub index: Buffer,
 }
 
-pub fn render(
+pub fn render<Uniforms: Component>(
 	mut ctx: ResMut<Context>,
 	resources: Res<ContextResources>,
 	query: Query<(
-		&GlobalTransform,
 		&Handle<Mesh>,
 		&Handle<Texture>,
 		&Handle<Shader>,
+		&Uniforms,
 	)>,
 ) {
 	let mut grouped_by_shader = query.iter().collect::<Vec<_>>();
-	grouped_by_shader.sort_by(|a, b| a.3.id.cmp(&b.3.id));
+	grouped_by_shader.sort_by(|a, b| a.2.id.cmp(&b.2.id));
 
 	ctx.begin_default_pass(Default::default());
 	let mut current_shader: Option<HandleId> = None;
 
-	for (transform, mesh_handle, texture_handle, shader_handle) in grouped_by_shader.into_iter() {
+	for (mesh_handle, texture_handle, shader_handle, uniforms) in grouped_by_shader.into_iter() {
 		if let Some(mesh) = resources.mesh_buffers.get(mesh_handle) {
 			if let Some(texture) = resources.textures.get(texture_handle) {
 				if let Some(pipeline) = resources.pipelines.get(shader_handle) {
@@ -48,7 +47,7 @@ pub fn render(
 						index_buffer: mesh.index,
 						images: vec![*texture],
 					});
-					ctx.apply_uniforms(&(transform.translation.x, transform.translation.y));
+					ctx.apply_uniforms(uniforms);
 					ctx.draw(0, mesh.index.size() as i32, 1);
 				}
 			}
