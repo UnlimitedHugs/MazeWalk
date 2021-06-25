@@ -1,17 +1,23 @@
+mod camera;
 mod draw;
 mod mesh;
 mod shader;
 mod texture;
 
+use std::fmt::Debug;
+
+pub use camera::{Camera, CameraBundle, ProjectionMatrix, ViewMatrix};
 pub use mesh::{Mesh, Vertex};
-pub use shader::{Shader, ShaderMetadata, UniformType};
-pub use texture::{Texture, TextureFormat};
+use miniquad::PipelineParams;
+pub use shader::{Shader, ShaderMetadata};
+pub use texture::Texture;
 
 use bevy::{asset::AssetStage, ecs::component::Component, prelude::*};
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, StageLabel)]
 pub enum RenderStage {
 	RenderResource,
+	PreRender,
 	Render,
 }
 
@@ -26,6 +32,11 @@ impl Plugin for RenderingPlugin {
 		);
 		app.add_stage_after(
 			CoreStage::PostUpdate,
+			RenderStage::PreRender,
+			SystemStage::parallel(),
+		);
+		app.add_stage_after(
+			RenderStage::PreRender,
 			RenderStage::Render,
 			SystemStage::single_threaded(),
 		)
@@ -39,8 +50,14 @@ impl Plugin for RenderingPlugin {
 				.with_system(texture::upload_textures.system())
 				.with_system(mesh::upload_meshes.system())
 				.with_system(shader::upload_shaders.system()),
-		);
+		)
+		.add_plugin(camera::CameraPlugin);
 	}
+}
+
+#[derive(Default)]
+pub struct RenderSettings {
+	pub pipeline: PipelineParams
 }
 
 pub trait AppExtensions {
@@ -51,4 +68,3 @@ impl AppExtensions for AppBuilder {
 		self.add_system_to_stage(RenderStage::Render, draw::render::<T>.system())
 	}
 }
-

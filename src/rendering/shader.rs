@@ -1,10 +1,9 @@
-use super::draw::ContextResources;
-use super::mesh::Vertex;
+use super::{RenderSettings, draw::ContextResources, mesh::Vertex};
 use bevy::{prelude::*, reflect::TypeUuid};
 use bevy_miniquad::Context;
 use miniquad::{
-	BufferLayout, Pipeline, Shader as ContextShader, ShaderMeta, UniformBlockLayout, UniformDesc,
-	UniformType as ContextUniformType,
+	BufferLayout, Pipeline, PipelineParams, Shader as ContextShader, ShaderMeta,
+	UniformBlockLayout, UniformDesc, UniformType,
 };
 
 #[derive(TypeUuid)]
@@ -13,25 +12,6 @@ pub struct Shader {
 	pub vertex: String,
 	pub fragment: String,
 	pub meta: ShaderMetadata,
-}
-
-#[derive(Clone, Copy)]
-pub enum UniformType {
-	Float1,
-	Float2,
-	Float3,
-	Float4,
-}
-
-impl From<UniformType> for ContextUniformType {
-	fn from(t: UniformType) -> Self {
-		match t {
-			UniformType::Float1 => ContextUniformType::Float1,
-			UniformType::Float2 => ContextUniformType::Float2,
-			UniformType::Float3 => ContextUniformType::Float3,
-			UniformType::Float4 => ContextUniformType::Float4,
-		}
-	}
 }
 
 impl Shader {
@@ -68,7 +48,7 @@ impl ShaderMetadata {
 				uniforms: self
 					.uniforms
 					.iter()
-					.map(|u| UniformDesc::new(&u.0, u.1.into()))
+					.map(|u| UniformDesc::new(&u.0, u.1))
 					.collect(),
 			},
 		}
@@ -80,6 +60,7 @@ pub fn upload_shaders(
 	mut shader_events: EventReader<AssetEvent<Shader>>,
 	mut context: ResMut<Context>,
 	mut context_resources: ResMut<ContextResources>,
+	settings: Option<Res<RenderSettings>>,
 ) {
 	for evt in shader_events.iter() {
 		if let AssetEvent::Created { handle } = evt {
@@ -91,15 +72,22 @@ pub fn upload_shaders(
 					shader.meta.get_meta(),
 				)
 				.unwrap();
+				let pipeline_params = match settings {
+					Some(ref res) => PipelineParams {
+						..res.pipeline
+					},
+					None => Default::default(),
+				};
 				let overwritten = context_resources
 					.pipelines
 					.insert(
 						handle.clone(),
-						Pipeline::new(
+						Pipeline::with_params(
 							&mut context,
 							&[BufferLayout::default()],
 							&Vertex::attributes(),
 							shader,
+							pipeline_params,
 						),
 					)
 					.is_some();

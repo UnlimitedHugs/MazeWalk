@@ -1,7 +1,7 @@
 use super::draw::ContextResources;
 use bevy::{prelude::*, reflect::TypeUuid};
 use bevy_miniquad::Context;
-use miniquad::{Texture as ContextTexture, TextureFormat as ContextTextureFormat, TextureParams};
+use miniquad::{Texture as ContextTexture, TextureFormat, TextureParams};
 
 #[derive(TypeUuid)]
 #[uuid = "b028781a-058a-48b7-93cd-61769f97667a"]
@@ -10,22 +10,6 @@ pub struct Texture {
 	pub width: u32,
 	pub height: u32,
 	pub format: TextureFormat,
-}
-
-#[derive(Clone, Copy)]
-#[allow(dead_code)]
-pub enum TextureFormat {
-	RGB8,
-	RGBA8,
-}
-
-impl Into<ContextTextureFormat> for TextureFormat {
-	fn into(self) -> ContextTextureFormat {
-		match self {
-			TextureFormat::RGB8 => ContextTextureFormat::RGB8,
-			TextureFormat::RGBA8 => ContextTextureFormat::RGBA8,
-		}
-	}
 }
 
 pub fn upload_textures(
@@ -45,7 +29,7 @@ pub fn upload_textures(
 							&mut context,
 							&tex.data,
 							TextureParams {
-								format: tex.format.into(),
+								format: tex.format,
 								width: tex.width,
 								height: tex.height,
 								..Default::default()

@@ -4,7 +4,7 @@ use super::texture::Texture;
 use bevy::ecs::component::Component;
 use bevy::{asset::HandleId, prelude::*, utils::HashMap};
 use bevy_miniquad::Context;
-use miniquad::{Bindings, Buffer, Pipeline, Texture as ContextTexture};
+use miniquad::{Bindings, Buffer, PassAction, Pipeline, Texture as ContextTexture};
 
 #[derive(Default)]
 pub struct ContextResources {
@@ -23,34 +23,46 @@ pub fn render<Uniforms: Component>(
 	resources: Res<ContextResources>,
 	query: Query<(
 		&Handle<Mesh>,
-		&Handle<Texture>,
 		&Handle<Shader>,
+		Option<&Handle<Texture>>,
 		&Uniforms,
 	)>,
 ) {
 	let mut grouped_by_shader = query.iter().collect::<Vec<_>>();
-	grouped_by_shader.sort_by(|a, b| a.2.id.cmp(&b.2.id));
+	grouped_by_shader.sort_by(|a, b| a.1.id.cmp(&b.1.id));
 
-	ctx.begin_default_pass(Default::default());
+	ctx.begin_default_pass(PassAction::Clear {
+		color: Some((0.2, 0.2, 0.2, 1.0)),
+		depth: Some(1.),
+		stencil: None,
+	});
 	let mut current_shader: Option<HandleId> = None;
-
-	for (mesh_handle, texture_handle, shader_handle, uniforms) in grouped_by_shader.into_iter() {
-		if let Some(mesh) = resources.mesh_buffers.get(mesh_handle) {
-			if let Some(texture) = resources.textures.get(texture_handle) {
-				if let Some(pipeline) = resources.pipelines.get(shader_handle) {
-					if current_shader.is_none() || current_shader != Some(shader_handle.id) {
-						current_shader = Some(shader_handle.id);
-						ctx.apply_pipeline(&pipeline);
-					}
-					ctx.apply_bindings(&Bindings {
-						vertex_buffers: vec![mesh.vertex],
-						index_buffer: mesh.index,
-						images: vec![*texture],
-					});
-					ctx.apply_uniforms(uniforms);
-					ctx.draw(0, mesh.index.size() as i32, 1);
+	for (mesh_handle, shader_handle, optional_texture, uniforms) in grouped_by_shader.into_iter() {
+		if let (Some(mesh), Some(pipeline)) = (
+			resources.mesh_buffers.get(mesh_handle),
+			resources.pipelines.get(shader_handle),
+		) {
+			let images = if let Some(texture_handle) = optional_texture {
+				if let Some(texture) = resources.textures.get(texture_handle) {
+					vec![*texture]
+				} else {
+					continue;
 				}
+			} else {
+				vec![]
+			};
+
+			if current_shader.is_none() || current_shader != Some(shader_handle.id) {
+				current_shader = Some(shader_handle.id);
+				ctx.apply_pipeline(&pipeline);
 			}
+			ctx.apply_bindings(&Bindings {
+				vertex_buffers: vec![mesh.vertex],
+				index_buffer: mesh.index,
+				images,
+			});
+			ctx.apply_uniforms(uniforms);
+			ctx.draw(0, mesh.index.size() as i32, 1);
 		}
 	}
 

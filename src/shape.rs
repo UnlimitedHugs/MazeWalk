@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 // adapted from bevy_render/src/mesh/shape
 
-use super::rendering::{Vertex, Mesh};
+use super::rendering::{Mesh, Vertex};
 use bevy::math::{vec2, vec3, Vec2, Vec3};
 
 #[derive(Debug, Copy, Clone)]
@@ -60,7 +60,6 @@ impl Default for Box {
 
 impl From<Box> for Mesh {
 	fn from(sp: Box) -> Self {
-		
 		#[rustfmt::skip]
 		let vertex_data = [
 			// Top
@@ -95,7 +94,7 @@ impl From<Box> for Mesh {
 			(vec3(sp.max_x, sp.min_y, sp.min_z), vec3(0., -1.0, 0.), vec2(0., 1.0)),
 		];
 
-		let indices:Vec<u16> = vec![
+		let indices: Vec<u16> = vec![
 			0, 1, 2, 2, 3, 0, // top
 			4, 5, 6, 6, 7, 4, // bottom
 			8, 9, 10, 10, 11, 8, // right
@@ -142,7 +141,7 @@ impl From<Quad> for Mesh {
 		let north_east = vec2(extent_x, extent_y);
 		let south_west = vec2(-extent_x, -extent_y);
 		let south_east = vec2(extent_x, -extent_y);
-		
+
 		#[rustfmt::skip]
 		let vertex_data = if quad.flip {
 			[
@@ -196,7 +195,11 @@ impl From<Plane> for Mesh {
 	}
 }
 
-fn mesh_from_vertex_data(vertex_data: &[(Vec3, Vec3, Vec2)], indices: Vec<u16>, capacity: usize) -> Mesh {
+fn mesh_from_vertex_data(
+	vertex_data: &[(Vec3, Vec3, Vec2)],
+	indices: Vec<u16>,
+	capacity: usize,
+) -> Mesh {
 	let mut vertices = Vec::<_>::with_capacity(capacity);
 	for (pos, normal, uv) in vertex_data.iter() {
 		vertices.push(Vertex {
@@ -205,8 +208,5 @@ fn mesh_from_vertex_data(vertex_data: &[(Vec3, Vec3, Vec2)], indices: Vec<u16>, 
 			uv: *uv,
 		})
 	}
-	Mesh {
-		vertices,
-		indices
-	}
+	Mesh { vertices, indices }
 }

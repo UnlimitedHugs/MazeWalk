@@ -1,6 +1,7 @@
 use super::rendering::*;
 use super::shape::Quad;
 use bevy::{math::vec2, prelude::*};
+use miniquad::TextureFormat;
 
 pub struct QuadsDemoPlugin;
 impl Plugin for QuadsDemoPlugin {
@@ -66,7 +67,7 @@ fn update_quads(mut query: Query<(&DemoQuad, &mut QuadUniforms)>, time: Res<Time
 }
 
 mod shader {
-	use super::*;
+	use miniquad::UniformType;
 
 	pub const VERTEX: &str = r#"#version 100
 	attribute vec3 pos;
