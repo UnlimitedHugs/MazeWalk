@@ -10,13 +10,8 @@ impl Plugin for CameraPlugin {
 			SystemSet::new()
 				.with_system(update_view_matrix.system())
 				.with_system(update_projection_matrix.system()),
-		)
-		.add_startup_system(testy.system());
+		);
 	}
-}
-
-fn testy(mut cmd: Commands) {
-	cmd.spawn_bundle(CameraBundle::default());
 }
 
 #[derive(Bundle)]
