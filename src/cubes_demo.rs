@@ -1,4 +1,4 @@
-use super::{rendering::*, shape::Cube as CubeShape};
+use super::{rendering::*, utils::Color, shape::Cube as CubeShape};
 use bevy::{
 	input::mouse::{MouseMotion, MouseWheel},
 	math::vec3,
@@ -95,7 +95,10 @@ fn spawn_cubes(
 			global_transform,
 			mesh.clone(),
 			orbiting_shader.clone(),
-			CubeUniforms::default(),
+			CubeUniforms {
+				object_color: Color::hsl(rng.gen::<f32>()*360., 0.5, 0.5).into(),
+				..Default::default()
+			},
 		));
 	}
 
