@@ -830,6 +830,7 @@ dependencies = [
  "bevy",
  "bevy_miniquad",
  "miniquad",
+ "rand",
 ]
 
 [[package]]

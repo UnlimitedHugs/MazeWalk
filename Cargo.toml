@@ -10,3 +10,4 @@ edition = "2018"
 bevy = { version = "=0.5.0", default-features = false, features = ["dynamic"] }
 miniquad = { git = "https://github.com/not-fl3/miniquad" }
 bevy_miniquad = { path = "bevy_miniquad" }
+rand = "0.8.4"
