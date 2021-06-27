@@ -1,5 +1,5 @@
+use super::utils::Quad;
 use super::rendering::*;
-use super::shape::Quad;
 use bevy::{math::vec2, prelude::*};
 use miniquad::TextureFormat;
 

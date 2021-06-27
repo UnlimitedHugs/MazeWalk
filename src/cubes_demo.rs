@@ -1,4 +1,4 @@
-use super::{rendering::*, utils::Color, shape::Cube as CubeShape};
+use super::{rendering::*, utils::{Color, Cube}};
 use bevy::{
 	input::mouse::{MouseMotion, MouseWheel},
 	math::vec3,
@@ -58,7 +58,7 @@ fn spawn_cubes(
 	mut meshes: ResMut<Assets<Mesh>>,
 	mut shaders: ResMut<Assets<Shader>>,
 ) {
-	let mesh = meshes.add(CubeShape::new(1.0).into());
+	let mesh = meshes.add(Cube::new(1.0).into());
 	let orbiting_shader = shaders.add(Shader::new(
 		shader::VERTEX,
 		orbiting_shader::FRAGMENT,

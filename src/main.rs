@@ -1,7 +1,6 @@
 mod cubes_demo;
 mod quads_demo;
 mod rendering;
-mod shape;
 mod utils;
 
 use bevy::{

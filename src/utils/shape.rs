@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 // adapted from bevy_render/src/mesh/shape
 
-use super::rendering::{Mesh, Vertex};
+use crate::rendering::{Mesh, Vertex};
 use bevy::math::{vec2, vec3, Vec2, Vec3};
 
 #[derive(Debug, Copy, Clone)]
