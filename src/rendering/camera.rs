@@ -16,17 +16,17 @@ impl Plugin for CameraPlugin {
 
 #[derive(Bundle)]
 pub struct CameraBundle {
-	camera: Camera,
-	transform: GlobalTransform,
-	view: ViewMatrix,
-	projection: ProjectionMatrix,
+	pub camera: Camera,
+	pub transform: GlobalTransform,
+	pub view: ViewMatrix,
+	pub projection: ProjectionMatrix,
 }
 
 impl Default for CameraBundle {
 	fn default() -> Self {
 		Self {
 			camera: Default::default(),
-			transform: GlobalTransform::looking_at(GlobalTransform::identity(), Vec3::Z, Vec3::Y),
+			transform: GlobalTransform::looking_at(GlobalTransform::identity(), -Vec3::Z, Vec3::Y),
 			view: Default::default(),
 			projection: Default::default(),
 		}
@@ -78,6 +78,6 @@ fn update_view_matrix(
 	mut query: Query<(&GlobalTransform, &mut ViewMatrix), Changed<GlobalTransform>>,
 ) {
 	for (tx, mut view) in query.iter_mut() {
-		view.0 = tx.compute_matrix();
+		view.0 = tx.compute_matrix().inverse();
 	}
 }

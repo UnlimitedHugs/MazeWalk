@@ -183,9 +183,8 @@ fn update_camera_position(
 		if let Ok(mut transform) = q.single_mut() {
 			let camera_rotation =
 				Mat4::from_rotation_y(state.yaw) * Mat4::from_rotation_x(state.pitch);
-			let camera_pos = camera_rotation.transform_point3(vec3(0.0, 0.0, state.distance));
-			*transform =
-				GlobalTransform::from_matrix(Mat4::look_at_rh(camera_pos, Vec3::ZERO, Vec3::Y));
+			transform.translation = camera_rotation.transform_point3(vec3(0.0, 0.0, state.distance));
+			transform.look_at(Vec3::ZERO, Vec3::Y);
 		}
 	}
 }
