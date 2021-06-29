@@ -6,6 +6,7 @@ mod texture;
 
 use std::fmt::Debug;
 
+use bevy_miniquad::Context;
 pub use camera::{Camera, CameraBundle, ProjectionMatrix, ViewMatrix};
 pub use mesh::{Mesh, Vertex};
 use miniquad::PipelineParams;
@@ -44,6 +45,7 @@ impl Plugin for RenderingPlugin {
 		.add_asset::<Mesh>()
 		.add_asset::<Shader>()
 		.init_resource::<draw::ContextResources>()
+		.add_system(capture_mouse.system())
 		.add_system_set_to_stage(
 			RenderStage::RenderResource,
 			SystemSet::new()
@@ -57,7 +59,13 @@ impl Plugin for RenderingPlugin {
 
 #[derive(Default)]
 pub struct RenderSettings {
-	pub pipeline: PipelineParams
+	pub pipeline: PipelineParams,
+	pub capture_mouse: bool,
+}
+
+fn capture_mouse(ctx: Res<Context>, settings: Res<RenderSettings>) {
+	ctx.set_cursor_grab(settings.capture_mouse);
+	ctx.show_mouse(!settings.capture_mouse);
 }
 
 pub trait AppExtensions {

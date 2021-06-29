@@ -1,6 +1,10 @@
 use super::{rendering::*, utils::Cube};
-use bevy::{math::{vec2, vec3}, prelude::*};
-use miniquad::{Comparison, PipelineParams};
+use bevy::{
+	input::mouse::MouseMotion,
+	math::{vec2, vec3},
+	prelude::*,
+};
+use miniquad::{Comparison, CullFace, PipelineParams};
 use rand::Rng;
 
 pub struct MazePlugin;
@@ -10,13 +14,15 @@ impl Plugin for MazePlugin {
 			pipeline: PipelineParams {
 				depth_test: Comparison::LessOrEqual,
 				depth_write: true,
+				cull_face: CullFace::Back,
 				..Default::default()
 			},
+			capture_mouse: true,
 		})
 		.register_shader_uniforms::<Uniforms>()
 		.add_startup_system(build_maze.system())
 		.add_system(update_uniforms.system())
-		.add_system(camera_input.system());
+		.add_system(camera_input.system().chain(expand_euler_rotation.system()));
 	}
 }
 
@@ -62,25 +68,23 @@ fn build_maze(
 			clipping_distance: 0.1..100.,
 		},
 		..Default::default()
-	});
+	})
+	.insert(RotationEuler::default());
 }
 
+#[derive(Default)]
+struct RotationEuler(Vec2);
+
 fn camera_input(
-	mut q: Query<&mut GlobalTransform, With<Camera>>,
+	mut q: Query<(&mut GlobalTransform, &mut RotationEuler), With<Camera>>,
 	key: Res<Input<KeyCode>>,
+	mut mouse_motion: EventReader<MouseMotion>,
 	t: Res<Time>,
 ) {
-	let mut rotation = 0f32;
-	if key.pressed(KeyCode::Q) {
-		rotation = 1.;
-	} 
-	if key.pressed(KeyCode::E) {
-		rotation = -1.;
-	}
 	let mut movement = Vec3::ZERO;
 	if key.pressed(KeyCode::W) {
 		movement += vec3(0., 0., -1.0);
-	} 
+	}
 	if key.pressed(KeyCode::S) {
 		movement += vec3(0., 0., 1.0);
 	}
@@ -91,13 +95,28 @@ fn camera_input(
 		movement += vec3(1., 0., 0.);
 	}
 
-	let mut transform = q.single_mut().unwrap();
-	if rotation != 0. {
-		transform.rotate(Quat::from_rotation_y(rotation * 180f32.to_radians() * t.delta_seconds()));
+	let (mut transform, mut euler) = q.single_mut().unwrap();
+	let mouse_sensitivity = 0.008f32;
+	let pitch_limit = 90.0f32.to_radians() * 0.99;
+	for MouseMotion { delta } in mouse_motion.iter() {
+		euler.0 = vec2(
+			euler.0.x - delta.x * mouse_sensitivity,
+			(euler.0.y - delta.y * mouse_sensitivity).clamp(-pitch_limit, pitch_limit),
+		);
 	}
 	if movement != Vec3::ZERO {
-		let view_relative = transform.rotation * (movement * 3. * t.delta_seconds());
+		let view_relative =
+			Quat::from_rotation_ypr(euler.0.x, 0., 0.) * (movement * 3. * t.delta_seconds());
 		transform.translation += view_relative;
+	}
+}
+
+fn expand_euler_rotation(
+	mut q: Query<(&mut GlobalTransform, &RotationEuler), Changed<RotationEuler>>,
+) {
+	// separate system to handle startup value
+	for (mut tx, RotationEuler(r)) in q.iter_mut() {
+		tx.rotation = Quat::from_rotation_ypr(r.x, r.y, 0.);
 	}
 }
 

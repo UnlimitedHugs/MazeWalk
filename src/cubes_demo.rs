@@ -23,6 +23,7 @@ impl Plugin for CubesDemoPlugin {
 					depth_write: true,
 					..Default::default()
 				},
+				..Default::default()
 			})
 			.init_resource::<CameraState>()
 			.add_startup_system(spawn_cubes.system())
