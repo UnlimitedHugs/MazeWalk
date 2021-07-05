@@ -1,13 +1,13 @@
 use std::cmp::Ordering;
 
-use super::{rendering::*, utils::Cube};
+use super::{rendering::*, utils::Cube, maze_gen::{self, LinkDirection}};
 use bevy::{
 	input::mouse::MouseMotion,
 	math::{vec2, vec3},
 	prelude::*,
 };
 use miniquad::{Comparison, CullFace, PipelineParams};
-use rand::Rng;
+//use rand::Rng;
 
 pub struct MazePlugin;
 impl Plugin for MazePlugin {
@@ -50,19 +50,39 @@ fn build_maze(
 		&shader::TEXTURES,
 		&shader::UNIFORMS,
 	));
-	let mut rng = rand::thread_rng();
 
-	const GRID_SIZE: i32 = 16;
+	const GRID_SIZE: i32 = 17;
 	let grid = {
-		const SIZE: usize = GRID_SIZE as usize;
-		let mut arr = [[false; SIZE]; SIZE];
-		for x in 0..SIZE {
-			for z in 0..SIZE {
-				arr[x][z] = rng.gen_ratio(1, 3);
+		let mut grid = [[true; GRID_SIZE as usize]; GRID_SIZE as usize];
+		const MAZE_SIZE: usize = GRID_SIZE as usize / 2;
+		let maze = maze_gen::generate(MAZE_SIZE, MAZE_SIZE);
+		for (maze_z, row) in maze.iter_rows().enumerate() {
+			for (maze_x, node) in row.iter().enumerate() {
+				let (z, x) = (maze_z * 2 + 1, maze_x * 2 + 1);
+				grid[z][x] = false;
+				if maze.has_link(node, LinkDirection::Right) {
+					grid[z][x + 1] = false;
+				}
+				if maze.has_link(node, LinkDirection::Down) {
+					grid[z + 1][x] = false;
+				}
 			}
 		}
-		arr
+		grid
 	};
+
+	//let mut rng = rand::thread_rng();
+	//const GRID_SIZE: i32 = 16;
+	// let grid = {
+	// 	const SIZE: usize = GRID_SIZE as usize;
+	// 	let mut arr = [[false; SIZE]; SIZE];
+	// 	for x in 0..SIZE {
+	// 		for z in 0..SIZE {
+	// 			arr[x][z] = rng.gen_ratio(1, 3);
+	// 		}
+	// 	}
+	// 	arr
+	// };
 
 	// const GRID_SIZE: i32 = 8;
 	// let grid = [ // H shapes
@@ -127,7 +147,7 @@ fn build_maze(
 	}
 
 	cmd.spawn_bundle(CameraBundle {
-		transform: GlobalTransform::from_translation(vec3(0., 0., GRID_SIZE as f32 + 4.)),
+		transform: GlobalTransform::from_translation(vec3(1., 0., GRID_SIZE as f32 - 2.)),
 		camera: Camera {
 			field_of_view: 75.0,
 			clipping_distance: 0.1..100.,

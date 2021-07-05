@@ -3,6 +3,7 @@ mod quads_demo;
 mod rendering;
 mod utils;
 mod maze;
+mod maze_gen;
 
 use bevy::{
 	app::{App, AppExit},
