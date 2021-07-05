@@ -1,6 +1,10 @@
 use std::cmp::Ordering;
 
-use super::{rendering::*, utils::Cube, maze_gen::{self, LinkDirection}};
+use super::{
+	maze_gen::{self, LinkDirection},
+	rendering::*,
+	utils::Cube,
+};
 use bevy::{
 	input::mouse::MouseMotion,
 	math::{vec2, vec3},
@@ -29,7 +33,8 @@ impl Plugin for MazePlugin {
 				.system()
 				.chain(expand_euler_rotation.system()),
 		)
-		.add_system(player_movement.system().chain(collide_with_walls.system()));
+		.add_system(player_movement.system().chain(collide_with_walls.system()))
+		.add_system(update_hover_mode.system());
 	}
 }
 
@@ -70,43 +75,6 @@ fn build_maze(
 		}
 		grid
 	};
-
-	//let mut rng = rand::thread_rng();
-	//const GRID_SIZE: i32 = 16;
-	// let grid = {
-	// 	const SIZE: usize = GRID_SIZE as usize;
-	// 	let mut arr = [[false; SIZE]; SIZE];
-	// 	for x in 0..SIZE {
-	// 		for z in 0..SIZE {
-	// 			arr[x][z] = rng.gen_ratio(1, 3);
-	// 		}
-	// 	}
-	// 	arr
-	// };
-
-	// const GRID_SIZE: i32 = 8;
-	// let grid = [ // H shapes
-	// 	[false, false, false, false, false, false, false, false],
-	// 	[false, true, true, true, false, true, false, true],
-	// 	[false, false, true, false, false, true, true, true],
-	// 	[false, true, true, true, false, true, false, true],
-	// 	[false, false, false, false, false, false, false, false],
-	// 	[false, false, false, false, false, false, false, false],
-	// 	[false, false, false, false, false, false, false, false],
-	// 	[false, false, false, false, false, false, false, false],
-	// ];
-
-	// const GRID_SIZE: i32 = 8;
-	// let grid = [ // hor/vert segments
-	// 	[false,false,false,false,false,false,false,false],
-	// 	[false,true ,false,true ,false,false,false,false],
-	// 	[false,false,false,true ,false,false,false,false],
-	// 	[false,false,false,false,false,false,false,false],
-	// 	[false,true, true, false,false,false,false,false],
-	// 	[false,false,false,false,false,false,false,false],
-	// 	[false,false,false,false,false,false,false,false],
-	// 	[false,false,false,false,false,false,false,false],
-	// ];
 
 	let has_block = |x: i32, z: i32| {
 		x >= 0 && x < GRID_SIZE && z >= 0 && z < GRID_SIZE && grid[x as usize][z as usize]
@@ -213,12 +181,16 @@ fn player_movement(
 fn collide_with_walls(
 	mut q: QuerySet<(
 		Query<(&GlobalTransform, &CollisionEdges), With<Wall>>,
-		Query<&mut GlobalTransform, With<Camera>>,
+		Query<(&mut GlobalTransform, Option<&NoClip>), With<Camera>>,
 	)>,
 ) {
+	let (cam_transform, noclip) = q.q1_mut().single_mut().unwrap();
+	if noclip.is_some() {
+		return;
+	}
+	let mut player_pos = cam_transform.translation;
 	let player_size = 0.2f32;
 	let wall_size = CELL_SIZE / 2.0;
-	let mut player_pos = q.q1_mut().single_mut().unwrap().translation;
 	let mut position_adjusted = false;
 	for (
 		GlobalTransform {
@@ -248,7 +220,7 @@ fn collide_with_walls(
 		}
 	}
 	if position_adjusted {
-		q.q1_mut().single_mut().unwrap().translation = player_pos;
+		q.q1_mut().single_mut().unwrap().0.translation = player_pos;
 	}
 }
 
@@ -293,6 +265,25 @@ impl Default for Uniforms {
 		}
 	}
 }
+
+fn update_hover_mode(
+	mut cmd: Commands,
+	mut q: Query<(Entity, &mut GlobalTransform, Option<&NoClip>), With<Camera>>,
+	input: Res<Input<KeyCode>>,
+) {
+	let (cam_entity, mut cam_transform, cam_noclip) = q.single_mut().unwrap();
+	if input.just_pressed(KeyCode::Space) {
+		if cam_noclip.is_some() {
+			cmd.entity(cam_entity).remove::<NoClip>();
+			cam_transform.translation.y = 0.;
+		} else {
+			cmd.entity(cam_entity).insert(NoClip);
+			cam_transform.translation.y = 4.;
+		}
+	}
+}
+
+struct NoClip;
 
 #[derive(Clone, Copy, Debug)]
 enum CollisionEdge {
