@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use super::{
-	maze_gen::{self, LinkDirection},
+	maze_gen::{self, GridDirection},
 	rendering::*,
 	utils::Cube,
 };
@@ -65,10 +65,10 @@ fn build_maze(
 			for (maze_x, node) in row.iter().enumerate() {
 				let (z, x) = (maze_z * 2 + 1, maze_x * 2 + 1);
 				grid[z][x] = false;
-				if maze.has_link(node, LinkDirection::Right) {
+				if maze.has_link(node, GridDirection::Right) {
 					grid[z][x + 1] = false;
 				}
-				if maze.has_link(node, LinkDirection::Down) {
+				if maze.has_link(node, GridDirection::Down) {
 					grid[z + 1][x] = false;
 				}
 			}

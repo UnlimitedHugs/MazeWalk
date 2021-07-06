@@ -7,6 +7,6 @@ mod grid_node;
 
 pub use {
 	generator::generate,
-	grid_maze::{GridMaze, LinkDirection},
+	grid_maze::{GridMaze, GridDirection},
 	grid_node::GridNode,
 };

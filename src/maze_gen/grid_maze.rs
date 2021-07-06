@@ -95,7 +95,7 @@ impl GridMaze {
 	}
 
 	/// returns true if the node has a neighbor in the given direction, as well as a link to it
-	pub fn has_link(&self, node: &GridNode, direction: LinkDirection) -> bool {
+	pub fn has_link(&self, node: &GridNode, direction: GridDirection) -> bool {
 		if let Some(ref node2) = self.get_neighbor(node, direction) {
 			return self.has_node_link(node, node2);
 		}
@@ -103,12 +103,12 @@ impl GridMaze {
 	}
 
 	/// returns the neighbor of a node in the given direction, or None if node is at map edge
-	pub fn get_neighbor(&self, node: &GridNode, direction: LinkDirection) -> Option<GridNode> {
+	pub fn get_neighbor(&self, node: &GridNode, direction: GridDirection) -> Option<GridNode> {
 		match direction {
-			LinkDirection::Up => self.up(node),
-			LinkDirection::Right => self.right(node),
-			LinkDirection::Down => self.down(node),
-			LinkDirection::Left => self.left(node),
+			GridDirection::Up => self.up(node),
+			GridDirection::Right => self.right(node),
+			GridDirection::Down => self.down(node),
+			GridDirection::Left => self.left(node),
 		}
 	}
 
@@ -144,6 +144,31 @@ impl GridMaze {
 	/// returns a mutable iterator over this maze's nodes in row order
 	pub fn iter_mut_nodes(&mut self) -> IterMut<'_, GridNode> {
 		self.nodes.iter_mut()
+	}
+
+	pub fn get_edge_nodes(&self, side: GridDirection) -> Vec<GridNode> {
+		use GridDirection::*;
+		match side {
+			Up | Down => match side {
+				Up => self.iter_rows().next(),
+				Down => self.iter_rows().last(),
+				_ => unreachable!(),
+			}
+			.unwrap_or_default()
+			.iter()
+			.copied()
+			.collect(),
+			Right | Left => self
+				.iter_rows()
+				.map(|r| match side {
+					Right => r.last(),
+					Left => r.first(),
+					_ => unreachable!(),
+				})
+				.filter_map(|n| n)
+				.copied()
+				.collect(),
+		}
 	}
 
 	pub fn up(&self, node: &GridNode) -> Option<GridNode> {
@@ -370,7 +395,7 @@ impl GridMaze {
 }
 
 #[derive(Clone, Copy, PartialEq)]
-pub enum LinkDirection {
+pub enum GridDirection {
 	Up,
 	Right,
 	Down,
@@ -519,7 +544,7 @@ mod tests {
 
 	#[test]
 	fn directions_map_to_correct_nodes() {
-		use super::LinkDirection::*;
+		use super::GridDirection::*;
 		let maze = GridMaze::new(3, 3);
 		let center = &maze[4];
 		let dirs = [Up, Right, Down, Left]
@@ -534,5 +559,22 @@ mod tests {
 		for (a, b) in dirs.zip(calls.iter()) {
 			assert_eq!(a, *b);
 		}
+	}
+
+	#[test]
+	fn get_edge_nodes() {
+		use super::GridDirection::*;
+		let maze1 = GridMaze::new(3, 3);
+		assert_eq!(maze1.get_edge_nodes(Up), vec![maze1[0], maze1[1], maze1[2]]);
+		assert_eq!(maze1.get_edge_nodes(Down), vec![maze1[6], maze1[7], maze1[8]]);
+		assert_eq!(maze1.get_edge_nodes(Right), vec![maze1[2], maze1[5], maze1[8]]);
+		assert_eq!(maze1.get_edge_nodes(Left), vec![maze1[0], maze1[3], maze1[6]]);
+
+		let maze2 = GridMaze::new(1, 1);
+		let maze2_single = vec![maze2[0]];
+		assert_eq!(maze2.get_edge_nodes(Up), maze2_single);
+		assert_eq!(maze2.get_edge_nodes(Down), maze2_single);
+		assert_eq!(maze2.get_edge_nodes(Right), maze2_single);
+		assert_eq!(maze2.get_edge_nodes(Left), maze2_single);
 	}
 }
