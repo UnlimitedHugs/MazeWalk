@@ -146,26 +146,20 @@ impl GridMaze {
 		self.nodes.iter_mut()
 	}
 
+	/// returns a row or column of nodes adjacent to the edge of the maze in the given direction
 	pub fn get_edge_nodes(&self, side: GridDirection) -> Vec<GridNode> {
 		use GridDirection::*;
 		match side {
-			Up | Down => match side {
-				Up => self.iter_rows().next(),
-				Down => self.iter_rows().last(),
-				_ => unreachable!(),
-			}
-			.unwrap_or_default()
-			.iter()
-			.copied()
-			.collect(),
+			Up | Down => self
+				.iter_rows()
+				.nth(if side == Up { 0 } else { self.rows - 1 })
+				.unwrap_or_default()
+				.iter()
+				.copied()
+				.collect(),
 			Right | Left => self
 				.iter_rows()
-				.map(|r| match side {
-					Right => r.last(),
-					Left => r.first(),
-					_ => unreachable!(),
-				})
-				.filter_map(|n| n)
+				.filter_map(|r| if side == Right { r.last() } else { r.first() })
 				.copied()
 				.collect(),
 		}
@@ -566,9 +560,18 @@ mod tests {
 		use super::GridDirection::*;
 		let maze1 = GridMaze::new(3, 3);
 		assert_eq!(maze1.get_edge_nodes(Up), vec![maze1[0], maze1[1], maze1[2]]);
-		assert_eq!(maze1.get_edge_nodes(Down), vec![maze1[6], maze1[7], maze1[8]]);
-		assert_eq!(maze1.get_edge_nodes(Right), vec![maze1[2], maze1[5], maze1[8]]);
-		assert_eq!(maze1.get_edge_nodes(Left), vec![maze1[0], maze1[3], maze1[6]]);
+		assert_eq!(
+			maze1.get_edge_nodes(Down),
+			vec![maze1[6], maze1[7], maze1[8]]
+		);
+		assert_eq!(
+			maze1.get_edge_nodes(Right),
+			vec![maze1[2], maze1[5], maze1[8]]
+		);
+		assert_eq!(
+			maze1.get_edge_nodes(Left),
+			vec![maze1[0], maze1[3], maze1[6]]
+		);
 
 		let maze2 = GridMaze::new(1, 1);
 		let maze2_single = vec![maze2[0]];
