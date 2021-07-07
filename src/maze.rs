@@ -1,17 +1,13 @@
 use std::cmp::Ordering;
 
 use super::{
-	maze_gen::{self, GridDirection},
+	maze_gen::{self, GridDirection, GridNode},
 	rendering::*,
 	utils::Cube,
 };
-use bevy::{
-	input::mouse::MouseMotion,
-	math::{vec2, vec3},
-	prelude::*,
-};
+use bevy::{input::mouse::MouseMotion, math::vec3, prelude::*};
 use miniquad::{Comparison, CullFace, PipelineParams};
-//use rand::Rng;
+use rand::{seq::IteratorRandom, seq::SliceRandom, thread_rng, Rng};
 
 pub struct MazePlugin;
 impl Plugin for MazePlugin {
@@ -40,8 +36,13 @@ impl Plugin for MazePlugin {
 
 const PI: f32 = std::f32::consts::PI;
 const CELL_SIZE: f32 = 1.0;
+const CHUNK_SIZE: i32 = 17;
 
 struct Wall;
+struct SidedNode {
+	node: GridNode,
+	side: GridDirection,
+}
 
 fn build_maze(
 	mut cmd: Commands,
@@ -56,11 +57,34 @@ fn build_maze(
 		&shader::UNIFORMS,
 	));
 
-	const GRID_SIZE: i32 = 17;
-	let grid = {
-		let mut grid = [[true; GRID_SIZE as usize]; GRID_SIZE as usize];
-		const MAZE_SIZE: usize = GRID_SIZE as usize / 2;
-		let maze = maze_gen::generate(MAZE_SIZE, MAZE_SIZE);
+	let entrance_transform = generate_chunk(&mut cmd, cube_mesh, shader);
+
+	cmd.spawn_bundle(CameraBundle {
+		transform: entrance_transform,
+		camera: Camera {
+			field_of_view: 75.0,
+			clipping_distance: 0.1..100.,
+		},
+		..Default::default()
+	})
+	.insert(RotationEuler {
+		yaw: entrance_transform.rotation.to_axis_angle().1,
+		pitch: 0.,
+	});
+}
+
+fn generate_chunk(
+	cmd: &mut Commands,
+	mesh: Handle<Mesh>,
+	shader: Handle<Shader>,
+) -> GlobalTransform {
+	let mut rng = thread_rng();
+	const MAZE_SIZE: usize = (CHUNK_SIZE as usize - 1) / 2;
+	let maze_to_grid = |(z, x): (i32, i32)| (z * 2 + 1, x * 2 + 1);
+
+	let maze = maze_gen::generate(MAZE_SIZE, MAZE_SIZE);
+	let mut grid = {
+		let mut grid = [[true; CHUNK_SIZE as usize]; CHUNK_SIZE as usize];
 		for (maze_z, row) in maze.iter_rows().enumerate() {
 			for (maze_x, node) in row.iter().enumerate() {
 				let (z, x) = (maze_z * 2 + 1, maze_x * 2 + 1);
@@ -76,16 +100,56 @@ fn build_maze(
 		grid
 	};
 
-	let has_block = |x: i32, z: i32| {
-		x >= 0 && x < GRID_SIZE && z >= 0 && z < GRID_SIZE && grid[x as usize][z as usize]
+	let (entrance, exit) = {
+		let entrance_side = GridDirection::ALL[rng.gen_range(0..4)];
+		let entrance_node = *maze
+			.get_edge_nodes(entrance_side)
+			.choose(&mut rng)
+			.expect("select entrance node");
+		let distances = maze.distances(&entrance_node);
+		let exit_pair = GridDirection::ALL
+			.iter()
+			.filter(|d| **d != entrance_side)
+			.flat_map(|d| {
+				maze.get_edge_nodes(*d)
+					.iter()
+					.map(|n| (*n, *d))
+					.collect::<Vec<_>>()
+			})
+			.max_by_key(|p| distances.get(&p.0))
+			.expect("select exit node");
+		(
+			SidedNode {
+				node: entrance_node,
+				side: entrance_side,
+			},
+			SidedNode {
+				node: exit_pair.0,
+				side: exit_pair.1,
+			},
+		)
 	};
 
-	for x in 0..GRID_SIZE {
-		for z in 0..GRID_SIZE {
+	for sided in [&entrance, &exit].iter() {
+		let (x, z) = maze_to_grid(maze.idx_to_pos(sided.node.pos()));
+		let (x_off, z_off) = sided.side.get_offset();
+		grid[(z + z_off) as usize][(x + x_off) as usize] = false;
+	}
+
+	let has_block = |x: i32, z: i32| {
+		x >= 0 && x < CHUNK_SIZE && z >= 0 && z < CHUNK_SIZE && grid[x as usize][z as usize]
+	};
+
+	let chunk = cmd
+		.spawn_bundle((Transform::default(), GlobalTransform::default()))
+		.id();
+
+	for x in 0..CHUNK_SIZE {
+		for z in 0..CHUNK_SIZE {
 			if !has_block(x, z) {
 				continue;
 			}
-			let transform = GlobalTransform::from_translation(vec3(x as f32, 0., z as f32));
+			let transform = Transform::from_translation(vec3(x as f32, 0., z as f32));
 			let edges = CollisionEdges {
 				edges: CollisionEdge::ALL
 					.iter()
@@ -103,30 +167,37 @@ fn build_maze(
 			cmd.spawn_bundle((
 				Wall,
 				transform,
-				cube_mesh.clone(),
+				GlobalTransform::default(),
+				mesh.clone(),
 				shader.clone(),
 				Uniforms {
 					model: transform.compute_matrix(),
 					..Default::default()
 				},
 				edges,
+				Parent(chunk),
 			));
 		}
 	}
-
-	cmd.spawn_bundle(CameraBundle {
-		transform: GlobalTransform::from_translation(vec3(1., 0., GRID_SIZE as f32 - 2.)),
-		camera: Camera {
-			field_of_view: 75.0,
-			clipping_distance: 0.1..100.,
-		},
-		..Default::default()
-	})
-	.insert(RotationEuler::default());
+	{
+		// transform for camera
+		let (entrance_z, entrance_x) = maze_to_grid(maze.idx_to_pos(entrance.node.pos()));
+		let random_neighbor = maze
+			.get_links(&entrance.node)
+			.into_iter()
+			.choose(&mut rng)
+			.expect("entrance neighbor");
+		let (neighbor_z, neighbor_x) = maze_to_grid(maze.idx_to_pos(random_neighbor.pos()));
+		GlobalTransform::from_translation(vec3(entrance_x as f32, 0., entrance_z as f32))
+			.looking_at(vec3(neighbor_x as f32, 0., neighbor_z as f32), Vec3::Y)
+	}
 }
 
 #[derive(Default)]
-struct RotationEuler(Vec2);
+struct RotationEuler {
+	yaw: f32,
+	pitch: f32,
+}
 
 fn camera_look_input(
 	mut q: Query<&mut RotationEuler, With<Camera>>,
@@ -136,10 +207,8 @@ fn camera_look_input(
 	let mouse_sensitivity = 0.006f32;
 	let pitch_limit = 90.0f32.to_radians() * 0.99;
 	for MouseMotion { delta } in mouse_motion.iter() {
-		euler.0 = vec2(
-			euler.0.x - delta.x * mouse_sensitivity,
-			(euler.0.y - delta.y * mouse_sensitivity).clamp(-pitch_limit, pitch_limit),
-		);
+		euler.yaw -= delta.x * mouse_sensitivity;
+		euler.pitch = (euler.pitch - delta.y * mouse_sensitivity).clamp(-pitch_limit, pitch_limit);
 	}
 }
 
@@ -147,8 +216,8 @@ fn expand_euler_rotation(
 	mut q: Query<(&mut GlobalTransform, &RotationEuler), Changed<RotationEuler>>,
 ) {
 	// separate system to handle startup value
-	for (mut tx, RotationEuler(r)) in q.iter_mut() {
-		tx.rotation = Quat::from_rotation_ypr(r.x, r.y, 0.);
+	for (mut tx, RotationEuler { yaw, pitch }) in q.iter_mut() {
+		tx.rotation = Quat::from_rotation_ypr(*yaw, *pitch, 0.);
 	}
 }
 
@@ -173,7 +242,7 @@ fn player_movement(
 
 	let (mut transform, euler) = q.single_mut().unwrap();
 	if movement != Vec3::ZERO {
-		let view_relative = Quat::from_rotation_y(euler.0.x) * (movement * 3. * t.delta_seconds());
+		let view_relative = Quat::from_rotation_y(euler.yaw) * (movement * 3. * t.delta_seconds());
 		transform.translation += view_relative;
 	}
 }

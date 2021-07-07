@@ -52,6 +52,14 @@ impl GridMaze {
 		row * col_dim + col
 	}
 
+	/// returns the (col, row) position of a node with the given index in the maze
+	pub fn idx_to_pos(&self, idx: usize) -> (i32, i32) {
+		if idx >= self.len() {
+			panic!("node index out of bounds");
+		}
+		((idx % self.cols) as i32, (idx / self.cols) as i32)
+	}
+
 	// /// generates a two dimensional index from a one-dimensional index. Returns it as a
 	// /// `(row, col)` tuple
 	// fn idx_2d(index: usize, col_dim: usize) -> (usize, usize) {
@@ -396,6 +404,24 @@ pub enum GridDirection {
 	Left,
 }
 
+impl GridDirection {
+	pub const ALL: [GridDirection; 4] = [
+		GridDirection::Up,
+		GridDirection::Right,
+		GridDirection::Down,
+		GridDirection::Left,
+	];
+
+	pub fn get_offset(&self) -> (i32, i32) {
+		match self {
+			GridDirection::Up => (0, -1),
+			GridDirection::Right => (1, 0),
+			GridDirection::Down => (0, 1),
+			GridDirection::Left => (-1, 0),
+		}
+	}
+}
+
 pub trait WorldDirections {
 	fn north(&self, node: &GridNode) -> Option<GridNode>;
 	fn south(&self, node: &GridNode) -> Option<GridNode>;
@@ -579,5 +605,21 @@ mod tests {
 		assert_eq!(maze2.get_edge_nodes(Down), maze2_single);
 		assert_eq!(maze2.get_edge_nodes(Right), maze2_single);
 		assert_eq!(maze2.get_edge_nodes(Left), maze2_single);
+	}
+
+	#[test]
+	fn index_to_position_conversion() {
+		let maze = GridMaze::new(3, 3);
+		assert_eq!(maze.idx_to_pos(0), (0, 0));
+		assert_eq!(maze.idx_to_pos(2), (2, 0));
+		assert_eq!(maze.idx_to_pos(4), (1, 1));
+		assert_eq!(maze.idx_to_pos(8), (2, 2));
+	}
+
+	#[test]
+	#[should_panic]
+	fn invalid_index_to_position() {
+		let maze = GridMaze::new(3, 3);
+		maze.idx_to_pos(9);
 	}
 }
