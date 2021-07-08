@@ -54,7 +54,60 @@ fn build_maze(
 		&shader::UNIFORMS,
 	));
 
-	let first_chunk = generate_chunk(&mut cmd, cube_mesh, shader, false);
+	fn get_next_chunk_config(base_chunk: &Chunk) -> (ChunkCoords, SidedNode) {
+		let next_chunk_dir: IVec2 = base_chunk.exit.side.get_offset().into();
+		let exit_pos: IVec2 = base_chunk
+			.maze
+			.idx_to_pos(base_chunk.exit.node.pos())
+			.into();
+		let next_chunk_coords = base_chunk.coords.0 + next_chunk_dir;
+		let maze_size = base_chunk.maze.dimensions().0 as i32;
+		let entrance_pos = (base_chunk.coords.0 * maze_size + exit_pos + next_chunk_dir)
+			- next_chunk_coords * maze_size;
+		debug_assert!(
+			entrance_pos.x >= 0
+				&& entrance_pos.y >= 0
+				&& entrance_pos.x < maze_size
+				&& entrance_pos.y < maze_size
+		);
+		let entrance_index = GridMaze::idx_1d(
+			entrance_pos.y as usize,
+			entrance_pos.x as usize,
+			maze_size as usize,
+		);
+		(
+			ChunkCoords(next_chunk_coords),
+			SidedNode {
+				// next grid does not exist yet, use node with same index from previous grid
+				node: base_chunk.maze[entrance_index],
+				side: base_chunk.exit.side.opposite(),
+			},
+		)
+	}
+	let first_chunk = generate_chunk(
+		&mut cmd,
+		cube_mesh.clone(),
+		shader.clone(),
+		ChunkCoords::ZERO,
+		None,
+	);
+	let (second_chunk_offset, second_chunk_entrance) = get_next_chunk_config(&first_chunk);
+	let second_chunk = generate_chunk(
+		&mut cmd,
+		cube_mesh.clone(),
+		shader.clone(),
+		second_chunk_offset,
+		Some(second_chunk_entrance),
+	);
+	let (third_chunk_offset, third_chunk_entrance) = get_next_chunk_config(&second_chunk);
+	let _third_chunk = generate_chunk(
+		&mut cmd,
+		cube_mesh.clone(),
+		shader.clone(),
+		third_chunk_offset,
+		Some(third_chunk_entrance),
+	);
+
 	let camera_transform = {
 		let (entrance_x, entrance_z) =
 			maze_to_grid(first_chunk.maze.idx_to_pos(first_chunk.entrance.node.pos()));
@@ -91,16 +144,23 @@ struct SidedNode {
 }
 #[derive(Clone)]
 struct Chunk {
+	coords: ChunkCoords,
 	maze: GridMaze,
 	entrance: SidedNode,
 	exit: SidedNode,
+}
+#[derive(Clone, Copy)]
+struct ChunkCoords(IVec2);
+impl ChunkCoords {
+	const ZERO: ChunkCoords = ChunkCoords(IVec2::ZERO);
 }
 
 fn generate_chunk(
 	cmd: &mut Commands,
 	mesh: Handle<Mesh>,
 	shader: Handle<Shader>,
-	make_entrance: bool,
+	coords: ChunkCoords,
+	known_entrance: Option<SidedNode>,
 ) -> Chunk {
 	let mut rng = thread_rng();
 	const MAZE_SIZE: usize = (CHUNK_SIZE as usize - 1) / 2;
@@ -122,16 +182,22 @@ fn generate_chunk(
 		grid
 	};
 
+	let make_entrance_passage = known_entrance.is_some();
 	let (entrance, exit) = {
-		let entrance_side = GridDirection::ALL[rng.gen_range(0..4)];
-		let entrance_node = *maze
-			.get_edge_nodes(entrance_side)
-			.choose(&mut rng)
-			.expect("select entrance node");
-		let distances = maze.distances(&entrance_node);
+		let entrance = known_entrance.unwrap_or_else(|| {
+			let side = GridDirection::ALL[rng.gen_range(0..4)];
+			SidedNode {
+				node: *maze
+					.get_edge_nodes(side)
+					.choose(&mut rng)
+					.expect("select entrance node"),
+				side,
+			}
+		});
+		let distances = maze.distances(&entrance.node);
 		let exit_pair = GridDirection::ALL
 			.iter()
-			.filter(|d| **d != entrance_side)
+			.filter(|d| **d != entrance.side)
 			.flat_map(|d| {
 				maze.get_edge_nodes(*d)
 					.iter()
@@ -141,10 +207,7 @@ fn generate_chunk(
 			.max_by_key(|p| distances.get(&p.0))
 			.expect("select exit node");
 		(
-			SidedNode {
-				node: entrance_node,
-				side: entrance_side,
-			},
+			entrance,
 			SidedNode {
 				node: exit_pair.0,
 				side: exit_pair.1,
@@ -159,7 +222,7 @@ fn generate_chunk(
 			grid[(z + z_off) as usize][(x + x_off) as usize] = false;
 		};
 		make_outer_wall_passage(&exit);
-		if make_entrance {
+		if make_entrance_passage {
 			make_outer_wall_passage(&entrance);
 		}
 	}
@@ -169,24 +232,20 @@ fn generate_chunk(
 	};
 
 	let chunk = Chunk {
+		coords,
 		maze,
 		entrance,
 		exit,
 	};
-	let chunk_entity = cmd
-		.spawn_bundle((
-			Transform::default(),
-			GlobalTransform::default(),
-			chunk.clone(),
-		))
-		.id();
+	let chunk_entity = cmd.spawn_bundle((chunk.clone(),)).id();
 
 	for x in 0..CHUNK_SIZE {
 		for z in 0..CHUNK_SIZE {
 			if !has_block(x, z) {
 				continue;
 			}
-			let transform = Transform::from_translation(vec3(x as f32, 0., z as f32));
+			let transform =
+				GlobalTransform::from_translation(vec3(x as f32, 0., z as f32) + coords.into());
 			let edges = CollisionEdges {
 				edges: CollisionEdge::ALL
 					.iter()
@@ -204,7 +263,6 @@ fn generate_chunk(
 			cmd.spawn_bundle((
 				Wall,
 				transform,
-				GlobalTransform::default(),
 				mesh.clone(),
 				shader.clone(),
 				Uniforms {
@@ -466,6 +524,12 @@ impl<T: Reflect + PartialEq + PartialOrd> RectExtension for Rect<T> {
 			|| self.right < other.left
 			|| other.top < self.bottom
 			|| self.top < other.bottom)
+	}
+}
+
+impl From<ChunkCoords> for Vec3 {
+	fn from(o: ChunkCoords) -> Self {
+		vec3((o.0.x * CHUNK_SIZE) as f32, 0., (o.0.y * CHUNK_SIZE) as f32)
 	}
 }
 

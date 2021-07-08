@@ -53,11 +53,23 @@ impl GridMaze {
 	}
 
 	/// returns the (col, row) position of a node with the given index in the maze
+	/// panics if index is out of bounds
 	pub fn idx_to_pos(&self, idx: usize) -> (i32, i32) {
 		if idx >= self.len() {
 			panic!("node index out of bounds");
 		}
 		((idx % self.cols) as i32, (idx / self.cols) as i32)
+	}
+
+	/// returns the index of the node at the given position, panics if x or y are out of bounds
+	pub fn pos_to_idx(&self, (x, y): (i32, i32)) -> usize {
+		if x < 0 || x >= self.cols as i32 {
+			panic!("x pos out of bounds");
+		}
+		if y < 0 || y >= self.rows as i32 {
+			panic!("y pos out of bounds");
+		}
+		Self::idx_1d(y as usize, x as usize, self.cols)
 	}
 
 	// /// generates a two dimensional index from a one-dimensional index. Returns it as a
@@ -420,6 +432,15 @@ impl GridDirection {
 			GridDirection::Left => (-1, 0),
 		}
 	}
+	
+	pub fn opposite(self) -> GridDirection {
+		match self {
+			GridDirection::Up => GridDirection::Down,
+			GridDirection::Right => GridDirection::Left,
+			GridDirection::Down => GridDirection::Up,
+			GridDirection::Left => GridDirection::Right,
+		}
+	}
 }
 
 pub trait WorldDirections {
@@ -621,5 +642,21 @@ mod tests {
 	fn invalid_index_to_position() {
 		let maze = GridMaze::new(3, 3);
 		maze.idx_to_pos(9);
+	}
+
+	#[test]
+	fn position_to_index_conversion() {
+		let maze = GridMaze::new(3, 3);
+		assert_eq!(maze.pos_to_idx((0, 0)), 0);
+		assert_eq!(maze.pos_to_idx((2, 0)), 2);
+		assert_eq!(maze.pos_to_idx((1, 1)), 4);
+		assert_eq!(maze.pos_to_idx((2, 2)), 8);
+	}
+
+	#[test]
+	#[should_panic]
+	fn invalid_position_to_index() {
+		let maze = GridMaze::new(3, 3);
+		maze.pos_to_idx((3, 0));
 	}
 }
