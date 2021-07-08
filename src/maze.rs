@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use super::{
-	maze_gen::{self, GridDirection, GridNode},
+	maze_gen::{self, GridDirection, GridMaze, GridNode},
 	rendering::*,
 	utils::Cube,
 };
@@ -39,16 +39,13 @@ const CELL_SIZE: f32 = 1.0;
 const CHUNK_SIZE: i32 = 17;
 
 struct Wall;
-struct SidedNode {
-	node: GridNode,
-	side: GridDirection,
-}
 
 fn build_maze(
 	mut cmd: Commands,
 	mut meshes: ResMut<Assets<Mesh>>,
 	mut shaders: ResMut<Assets<Shader>>,
 ) {
+	let mut rng = thread_rng();
 	let cube_mesh = meshes.add(Cube::new(CELL_SIZE).into());
 	let shader = shaders.add(Shader::new(
 		shader::VERTEX,
@@ -57,10 +54,24 @@ fn build_maze(
 		&shader::UNIFORMS,
 	));
 
-	let entrance_transform = generate_chunk(&mut cmd, cube_mesh, shader, false);
+	let first_chunk = generate_chunk(&mut cmd, cube_mesh, shader, false);
+	let camera_transform = {
+		let (entrance_z, entrance_x) =
+			maze_to_grid(first_chunk.maze.idx_to_pos(first_chunk.entrance.node.pos()));
+		let random_neighbor = first_chunk
+			.maze
+			.get_links(&first_chunk.entrance.node)
+			.into_iter()
+			.choose(&mut rng)
+			.expect("entrance neighbor");
+		let (neighbor_z, neighbor_x) =
+			maze_to_grid(first_chunk.maze.idx_to_pos(random_neighbor.pos()));
+		GlobalTransform::from_translation(vec3(entrance_x as f32, 0., entrance_z as f32))
+			.looking_at(vec3(neighbor_x as f32, 0., neighbor_z as f32), Vec3::Y)
+	};
 
 	cmd.spawn_bundle(CameraBundle {
-		transform: entrance_transform,
+		transform: camera_transform,
 		camera: Camera {
 			field_of_view: 75.0,
 			clipping_distance: 0.1..100.,
@@ -68,9 +79,21 @@ fn build_maze(
 		..Default::default()
 	})
 	.insert(RotationEuler {
-		yaw: entrance_transform.rotation.to_axis_angle().1,
+		yaw: camera_transform.rotation.to_axis_angle().1,
 		pitch: 0.,
 	});
+}
+
+#[derive(Clone)]
+struct SidedNode {
+	node: GridNode,
+	side: GridDirection,
+}
+#[derive(Clone)]
+struct Chunk {
+	maze: GridMaze,
+	entrance: SidedNode,
+	exit: SidedNode,
 }
 
 fn generate_chunk(
@@ -78,11 +101,9 @@ fn generate_chunk(
 	mesh: Handle<Mesh>,
 	shader: Handle<Shader>,
 	make_entrance: bool,
-) -> GlobalTransform {
+) -> Chunk {
 	let mut rng = thread_rng();
 	const MAZE_SIZE: usize = (CHUNK_SIZE as usize - 1) / 2;
-	let maze_to_grid = |(z, x): (i32, i32)| (z * 2 + 1, x * 2 + 1);
-
 	let maze = maze_gen::generate(MAZE_SIZE, MAZE_SIZE);
 	let mut grid = {
 		let mut grid = [[true; CHUNK_SIZE as usize]; CHUNK_SIZE as usize];
@@ -132,7 +153,7 @@ fn generate_chunk(
 	};
 
 	{
-		let mut make_outer_wall_passage = |n:&SidedNode| {
+		let mut make_outer_wall_passage = |n: &SidedNode| {
 			let (x, z) = maze_to_grid(maze.idx_to_pos(n.node.pos()));
 			let (x_off, z_off) = n.side.get_offset();
 			grid[(z + z_off) as usize][(x + x_off) as usize] = false;
@@ -147,8 +168,17 @@ fn generate_chunk(
 		x >= 0 && x < CHUNK_SIZE && z >= 0 && z < CHUNK_SIZE && grid[x as usize][z as usize]
 	};
 
-	let chunk = cmd
-		.spawn_bundle((Transform::default(), GlobalTransform::default()))
+	let chunk = Chunk {
+		maze,
+		entrance,
+		exit,
+	};
+	let chunk_entity = cmd
+		.spawn_bundle((
+			Transform::default(),
+			GlobalTransform::default(),
+			chunk.clone(),
+		))
 		.id();
 
 	for x in 0..CHUNK_SIZE {
@@ -182,22 +212,11 @@ fn generate_chunk(
 					..Default::default()
 				},
 				edges,
-				Parent(chunk),
+				Parent(chunk_entity),
 			));
 		}
 	}
-	{
-		// transform for camera
-		let (entrance_z, entrance_x) = maze_to_grid(maze.idx_to_pos(entrance.node.pos()));
-		let random_neighbor = maze
-			.get_links(&entrance.node)
-			.into_iter()
-			.choose(&mut rng)
-			.expect("entrance neighbor");
-		let (neighbor_z, neighbor_x) = maze_to_grid(maze.idx_to_pos(random_neighbor.pos()));
-		GlobalTransform::from_translation(vec3(entrance_x as f32, 0., entrance_z as f32))
-			.looking_at(vec3(neighbor_x as f32, 0., neighbor_z as f32), Vec3::Y)
-	}
+	chunk
 }
 
 #[derive(Default)]
@@ -448,6 +467,10 @@ impl<T: Reflect + PartialEq + PartialOrd> RectExtension for Rect<T> {
 			|| other.top < self.bottom
 			|| self.top < other.bottom)
 	}
+}
+
+fn maze_to_grid((z, x): (i32, i32)) -> (i32, i32) {
+	(z * 2 + 1, x * 2 + 1)
 }
 
 mod shader {

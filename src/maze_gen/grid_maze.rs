@@ -8,7 +8,7 @@ use std::slice::{ChunksExact, Iter, IterMut};
 
 /// Swiped from https://github.com/strohs/maze-algorithms/rust
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct GridMaze {
 	nodes: Vec<GridNode>,
 	links: HashMap<usize, Vec<usize>>,
