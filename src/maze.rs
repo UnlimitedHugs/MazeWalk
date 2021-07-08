@@ -57,7 +57,7 @@ fn build_maze(
 		&shader::UNIFORMS,
 	));
 
-	let entrance_transform = generate_chunk(&mut cmd, cube_mesh, shader);
+	let entrance_transform = generate_chunk(&mut cmd, cube_mesh, shader, false);
 
 	cmd.spawn_bundle(CameraBundle {
 		transform: entrance_transform,
@@ -77,6 +77,7 @@ fn generate_chunk(
 	cmd: &mut Commands,
 	mesh: Handle<Mesh>,
 	shader: Handle<Shader>,
+	make_entrance: bool,
 ) -> GlobalTransform {
 	let mut rng = thread_rng();
 	const MAZE_SIZE: usize = (CHUNK_SIZE as usize - 1) / 2;
@@ -130,10 +131,16 @@ fn generate_chunk(
 		)
 	};
 
-	for sided in [&entrance, &exit].iter() {
-		let (x, z) = maze_to_grid(maze.idx_to_pos(sided.node.pos()));
-		let (x_off, z_off) = sided.side.get_offset();
-		grid[(z + z_off) as usize][(x + x_off) as usize] = false;
+	{
+		let mut make_outer_wall_passage = |n:&SidedNode| {
+			let (x, z) = maze_to_grid(maze.idx_to_pos(n.node.pos()));
+			let (x_off, z_off) = n.side.get_offset();
+			grid[(z + z_off) as usize][(x + x_off) as usize] = false;
+		};
+		make_outer_wall_passage(&exit);
+		if make_entrance {
+			make_outer_wall_passage(&entrance);
+		}
 	}
 
 	let has_block = |x: i32, z: i32| {
