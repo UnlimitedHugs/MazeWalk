@@ -56,7 +56,7 @@ fn build_maze(
 
 	let first_chunk = generate_chunk(&mut cmd, cube_mesh, shader, false);
 	let camera_transform = {
-		let (entrance_z, entrance_x) =
+		let (entrance_x, entrance_z) =
 			maze_to_grid(first_chunk.maze.idx_to_pos(first_chunk.entrance.node.pos()));
 		let random_neighbor = first_chunk
 			.maze
@@ -64,7 +64,7 @@ fn build_maze(
 			.into_iter()
 			.choose(&mut rng)
 			.expect("entrance neighbor");
-		let (neighbor_z, neighbor_x) =
+		let (neighbor_x, neighbor_z) =
 			maze_to_grid(first_chunk.maze.idx_to_pos(random_neighbor.pos()));
 		GlobalTransform::from_translation(vec3(entrance_x as f32, 0., entrance_z as f32))
 			.looking_at(vec3(neighbor_x as f32, 0., neighbor_z as f32), Vec3::Y)
@@ -165,7 +165,7 @@ fn generate_chunk(
 	}
 
 	let has_block = |x: i32, z: i32| {
-		x >= 0 && x < CHUNK_SIZE && z >= 0 && z < CHUNK_SIZE && grid[x as usize][z as usize]
+		x >= 0 && x < CHUNK_SIZE && z >= 0 && z < CHUNK_SIZE && grid[z as usize][x as usize]
 	};
 
 	let chunk = Chunk {
@@ -469,8 +469,8 @@ impl<T: Reflect + PartialEq + PartialOrd> RectExtension for Rect<T> {
 	}
 }
 
-fn maze_to_grid((z, x): (i32, i32)) -> (i32, i32) {
-	(z * 2 + 1, x * 2 + 1)
+fn maze_to_grid((x, z): (i32, i32)) -> (i32, i32) {
+	(x * 2 + 1, z * 2 + 1)
 }
 
 mod shader {
