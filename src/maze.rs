@@ -1,12 +1,16 @@
 use std::cmp::Ordering;
-use crate::utils::Color;
 
 use super::{
 	maze_gen::{self, GridDirection, GridMaze},
 	rendering::*,
 	utils::Cube,
+	utils::Color,
 };
-use bevy::{input::mouse::MouseMotion, math::vec3, prelude::*};
+use bevy::{
+	input::mouse::MouseMotion,
+	math::{vec2, vec3},
+	prelude::*,
+};
 use miniquad::{Comparison, CullFace, PipelineParams};
 use rand::{seq::IteratorRandom, seq::SliceRandom, thread_rng, Rng};
 
@@ -23,12 +27,14 @@ impl Plugin for MazePlugin {
 			capture_mouse: true,
 		})
 		.register_shader_uniforms::<Uniforms>()
+		.add_event::<ChunkEntered>()
 		.add_startup_system(build_maze.system())
 		.add_system(update_uniforms.system())
 		.add_system(
 			camera_look_input
 				.system()
-				.chain(expand_euler_rotation.system()),
+				.chain(expand_euler_rotation.system())
+				.chain(track_current_chunk.system()),
 		)
 		.add_system(player_movement.system().chain(collide_with_walls.system()))
 		.add_system(update_hover_mode.system());
@@ -57,10 +63,7 @@ fn build_maze(
 
 	fn get_next_chunk_config(base_chunk: &Chunk) -> (ChunkCoords, SidedNode) {
 		let next_chunk_dir: IVec2 = base_chunk.exit.side.get_offset().into();
-		let exit_pos: IVec2 = base_chunk
-			.maze
-			.idx_to_pos(base_chunk.exit.node)
-			.into();
+		let exit_pos: IVec2 = base_chunk.maze.idx_to_pos(base_chunk.exit.node).into();
 		let next_chunk_coords = base_chunk.coords.0 + next_chunk_dir;
 		let maze_size = base_chunk.maze.dimensions().0 as i32;
 		let entrance_pos = (base_chunk.coords.0 * maze_size + exit_pos + next_chunk_dir)
@@ -177,6 +180,18 @@ struct Chunk {
 struct ChunkCoords(IVec2);
 impl ChunkCoords {
 	const ZERO: ChunkCoords = ChunkCoords(IVec2::ZERO);
+	fn as_rect(self) -> Rect<f32> {
+		let (x, y) = (
+			(self.0.x * CHUNK_SIZE) as f32,
+			(self.0.y * CHUNK_SIZE) as f32,
+		);
+		Rect {
+			left: x,
+			right: x + CHUNK_SIZE as f32,
+			top: y,
+			bottom: y + CHUNK_SIZE as f32,
+		}
+	}
 }
 
 fn generate_chunk(
@@ -513,6 +528,26 @@ impl CollisionEdge {
 	}
 }
 
+struct ChunkEntered(Entity);
+
+fn track_current_chunk(
+	q_chunks: Query<(Entity, &Chunk)>,
+	q_cam: Query<&GlobalTransform, With<Camera>>,
+	mut entered_event: EventWriter<ChunkEntered>,
+	mut current_chunk: Local<Option<Entity>>,
+) {
+	let cam_pos = q_cam.single().unwrap().translation;
+	let contains_camera = q_chunks
+		.iter()
+		.find(|(_, c)| c.coords.as_rect().contains(vec2(cam_pos.x, cam_pos.z)));
+	if let Some((cam_chunk_ent, _)) = contains_camera {
+		if *current_chunk != Some(cam_chunk_ent) {
+			*current_chunk = Some(cam_chunk_ent);
+			entered_event.send(ChunkEntered(cam_chunk_ent));
+		}
+	}
+}
+
 struct CollisionEdges {
 	edges: Vec<CollisionEdge>,
 }
@@ -546,13 +581,17 @@ impl CollisionEdges {
 
 trait RectExtension {
 	fn intersects(self, other: Self) -> bool;
+	fn contains(self, v: Vec2) -> bool;
 }
-impl<T: Reflect + PartialEq + PartialOrd> RectExtension for Rect<T> {
+impl RectExtension for Rect<f32> {
 	fn intersects(self, other: Self) -> bool {
 		!(other.right < self.left
 			|| self.right < other.left
 			|| other.top < self.bottom
 			|| self.top < other.bottom)
+	}
+	fn contains(self, v: Vec2) -> bool {
+		!(v.x < self.left || self.right < v.x || v.y < self.top || self.bottom < v.y)
 	}
 }
 
@@ -631,4 +670,24 @@ mod shader {
 		("light_color", UniformType::Float3),
 		("object_color", UniformType::Float3),
 	];
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn rect_contains() {
+		let r = Rect {
+			left: 1.,
+			right: 2.,
+			top: 3.,
+			bottom: 4.,
+		};
+		assert_eq!(r.contains(vec2(0.5, 0.5)), false);
+		assert_eq!(r.contains(vec2(1.5, 0.5)), false);
+		assert_eq!(r.contains(vec2(1.5, 3.5)), true);
+		assert_eq!(r.contains(vec2(3.5, 3.5)), false);
+		assert_eq!(r.contains(vec2(2.5, 4.5)), false);
+	}
 }
