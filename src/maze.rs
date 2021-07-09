@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use crate::utils::Color;
 
 use super::{
 	maze_gen::{self, GridDirection, GridMaze, GridNode},
@@ -84,28 +85,51 @@ fn build_maze(
 			},
 		)
 	}
+
+	let wall_colors = {
+		let num_samples = 8;
+		let hue_offset = rng.gen_range(0.0..360.0);
+		let mut colors = (0..num_samples)
+			.map(|i| {
+				Color::hsl(
+					(((360 / num_samples) * i) as f32 + hue_offset) % 360.,
+					0.4,
+					0.8,
+				)
+			})
+			.collect::<Vec<_>>();
+		colors.shuffle(&mut rng);
+		colors
+	};
+
 	let first_chunk = generate_chunk(
 		&mut cmd,
 		cube_mesh.clone(),
 		shader.clone(),
+		0,
 		ChunkCoords::ZERO,
 		None,
+		&wall_colors,
 	);
 	let (second_chunk_offset, second_chunk_entrance) = get_next_chunk_config(&first_chunk);
 	let second_chunk = generate_chunk(
 		&mut cmd,
 		cube_mesh.clone(),
 		shader.clone(),
+		1,
 		second_chunk_offset,
 		Some(second_chunk_entrance),
+		&wall_colors,
 	);
 	let (third_chunk_offset, third_chunk_entrance) = get_next_chunk_config(&second_chunk);
 	let _third_chunk = generate_chunk(
 		&mut cmd,
 		cube_mesh.clone(),
 		shader.clone(),
+		2,
 		third_chunk_offset,
 		Some(third_chunk_entrance),
+		&wall_colors,
 	);
 
 	let camera_transform = {
@@ -144,6 +168,7 @@ struct SidedNode {
 }
 #[derive(Clone)]
 struct Chunk {
+	index: usize,
 	coords: ChunkCoords,
 	maze: GridMaze,
 	entrance: SidedNode,
@@ -159,8 +184,10 @@ fn generate_chunk(
 	cmd: &mut Commands,
 	mesh: Handle<Mesh>,
 	shader: Handle<Shader>,
+	index: usize,
 	coords: ChunkCoords,
 	known_entrance: Option<SidedNode>,
+	wall_colors: &[Color],
 ) -> Chunk {
 	let mut rng = thread_rng();
 	const MAZE_SIZE: usize = (CHUNK_SIZE as usize - 1) / 2;
@@ -232,12 +259,14 @@ fn generate_chunk(
 	};
 
 	let chunk = Chunk {
+		index,
 		coords,
 		maze,
 		entrance,
 		exit,
 	};
 	let chunk_entity = cmd.spawn_bundle((chunk.clone(),)).id();
+	let wall_color: Vec3 = wall_colors[index % wall_colors.len()].into();
 
 	for x in 0..CHUNK_SIZE {
 		for z in 0..CHUNK_SIZE {
@@ -267,6 +296,7 @@ fn generate_chunk(
 				shader.clone(),
 				Uniforms {
 					model: transform.compute_matrix(),
+					object_color: wall_color,
 					..Default::default()
 				},
 				edges,
