@@ -3,8 +3,8 @@ use std::cmp::Ordering;
 use super::{
 	maze_gen::{self, GridDirection, GridMaze},
 	rendering::*,
-	utils::Cube,
 	utils::Color,
+	utils::Cube,
 };
 use bevy::{
 	input::mouse::MouseMotion,
@@ -14,9 +14,16 @@ use bevy::{
 use miniquad::{Comparison, CullFace, PipelineParams};
 use rand::{seq::IteratorRandom, seq::SliceRandom, thread_rng, Rng};
 
+#[derive(Debug, Hash, PartialEq, Eq, Clone, SystemLabel)]
+enum SystemLabels {
+	CameraLookInput,
+	PlayerMovement,
+}
+
 pub struct MazePlugin;
 impl Plugin for MazePlugin {
 	fn build(&self, app: &mut AppBuilder) {
+		use SystemLabels::*;
 		app.insert_resource(RenderSettings {
 			pipeline: PipelineParams {
 				depth_test: Comparison::LessOrEqual,
@@ -29,15 +36,13 @@ impl Plugin for MazePlugin {
 		.register_shader_uniforms::<Uniforms>()
 		.add_event::<ChunkEntered>()
 		.add_startup_system(build_maze.system())
-		.add_system(update_uniforms.system())
-		.add_system(
-			camera_look_input
-				.system()
-				.chain(expand_euler_rotation.system())
-				.chain(track_current_chunk.system()),
-		)
-		.add_system(player_movement.system().chain(collide_with_walls.system()))
-		.add_system(update_hover_mode.system());
+		.add_system(camera_look_input.system().label(CameraLookInput))
+		.add_system(expand_euler_rotation.system().after(CameraLookInput))
+		.add_system(player_movement.system().label(PlayerMovement))
+		.add_system(collide_with_walls.system().after(PlayerMovement))
+		.add_system(track_current_chunk.system().after(PlayerMovement))
+		.add_system(update_hover_mode.system())
+		.add_system_to_stage(RenderStage::PreRender, update_uniforms.system());
 	}
 }
 
@@ -231,7 +236,8 @@ fn generate_chunk(
 				node: maze
 					.get_edge_nodes(side)
 					.choose(&mut rng)
-					.expect("select entrance node").pos(),
+					.expect("select entrance node")
+					.pos(),
 				side,
 			}
 		});
