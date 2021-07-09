@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use crate::utils::Color;
 
 use super::{
-	maze_gen::{self, GridDirection, GridMaze, GridNode},
+	maze_gen::{self, GridDirection, GridMaze},
 	rendering::*,
 	utils::Cube,
 };
@@ -59,7 +59,7 @@ fn build_maze(
 		let next_chunk_dir: IVec2 = base_chunk.exit.side.get_offset().into();
 		let exit_pos: IVec2 = base_chunk
 			.maze
-			.idx_to_pos(base_chunk.exit.node.pos())
+			.idx_to_pos(base_chunk.exit.node)
 			.into();
 		let next_chunk_coords = base_chunk.coords.0 + next_chunk_dir;
 		let maze_size = base_chunk.maze.dimensions().0 as i32;
@@ -79,8 +79,7 @@ fn build_maze(
 		(
 			ChunkCoords(next_chunk_coords),
 			SidedNode {
-				// next grid does not exist yet, use node with same index from previous grid
-				node: base_chunk.maze[entrance_index],
+				node: entrance_index,
 				side: base_chunk.exit.side.opposite(),
 			},
 		)
@@ -134,10 +133,10 @@ fn build_maze(
 
 	let camera_transform = {
 		let (entrance_x, entrance_z) =
-			maze_to_grid(first_chunk.maze.idx_to_pos(first_chunk.entrance.node.pos()));
+			maze_to_grid(first_chunk.maze.idx_to_pos(first_chunk.entrance.node));
 		let random_neighbor = first_chunk
 			.maze
-			.get_links(&first_chunk.entrance.node)
+			.get_links(&first_chunk.maze[first_chunk.entrance.node])
 			.into_iter()
 			.choose(&mut rng)
 			.expect("entrance neighbor");
@@ -163,7 +162,7 @@ fn build_maze(
 
 #[derive(Clone)]
 struct SidedNode {
-	node: GridNode,
+	node: usize,
 	side: GridDirection,
 }
 #[derive(Clone)]
@@ -214,24 +213,24 @@ fn generate_chunk(
 		let entrance = known_entrance.unwrap_or_else(|| {
 			let side = GridDirection::ALL[rng.gen_range(0..4)];
 			SidedNode {
-				node: *maze
+				node: maze
 					.get_edge_nodes(side)
 					.choose(&mut rng)
-					.expect("select entrance node"),
+					.expect("select entrance node").pos(),
 				side,
 			}
 		});
-		let distances = maze.distances(&entrance.node);
+		let distances = maze.distances(&maze[entrance.node]);
 		let exit_pair = GridDirection::ALL
 			.iter()
 			.filter(|d| **d != entrance.side)
 			.flat_map(|d| {
 				maze.get_edge_nodes(*d)
 					.iter()
-					.map(|n| (*n, *d))
+					.map(|n| (n.pos(), *d))
 					.collect::<Vec<_>>()
 			})
-			.max_by_key(|p| distances.get(&p.0))
+			.max_by_key(|p| distances.get(&maze[p.0]))
 			.expect("select exit node");
 		(
 			entrance,
@@ -244,7 +243,7 @@ fn generate_chunk(
 
 	{
 		let mut make_outer_wall_passage = |n: &SidedNode| {
-			let (x, z) = maze_to_grid(maze.idx_to_pos(n.node.pos()));
+			let (x, z) = maze_to_grid(maze.idx_to_pos(n.node));
 			let (x_off, z_off) = n.side.get_offset();
 			grid[(z + z_off) as usize][(x + x_off) as usize] = false;
 		};
