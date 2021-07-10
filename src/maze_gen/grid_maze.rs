@@ -53,23 +53,22 @@ impl GridMaze {
 	}
 
 	/// returns the (col, row) position of a node with the given index in the maze
-	/// panics if index is out of bounds
-	pub fn idx_to_pos(&self, idx: usize) -> (i32, i32) {
-		if idx >= self.len() {
-			panic!("node index out of bounds");
+	/// return None if index is out of bounds
+	pub fn idx_to_pos(&self, idx: usize) -> Option<(i32, i32)> {
+		if idx < self.len() {
+			Some(((idx % self.cols) as i32, (idx / self.cols) as i32))
+		} else {
+			None
 		}
-		((idx % self.cols) as i32, (idx / self.cols) as i32)
 	}
 
-	/// returns the index of the node at the given position, panics if x or y are out of bounds
-	pub fn pos_to_idx(&self, (x, y): (i32, i32)) -> usize {
-		if x < 0 || x >= self.cols as i32 {
-			panic!("x pos out of bounds");
+	/// returns the index of the node at the given position, or None if x or y are out of bounds
+	pub fn pos_to_idx(&self, (x, y): (i32, i32)) -> Option<usize> {
+		if x >= 0 && x < self.cols as i32 && y >= 0 && y < self.rows as i32 {
+			Some(Self::idx_1d(y as usize, x as usize, self.cols))
+		} else {
+			None
 		}
-		if y < 0 || y >= self.rows as i32 {
-			panic!("y pos out of bounds");
-		}
-		Self::idx_1d(y as usize, x as usize, self.cols)
 	}
 
 	// /// generates a two dimensional index from a one-dimensional index. Returns it as a
@@ -432,7 +431,7 @@ impl GridDirection {
 			GridDirection::Left => (-1, 0),
 		}
 	}
-	
+
 	pub fn opposite(self) -> GridDirection {
 		match self {
 			GridDirection::Up => GridDirection::Down,
@@ -631,32 +630,22 @@ mod tests {
 	#[test]
 	fn index_to_position_conversion() {
 		let maze = GridMaze::new(3, 3);
-		assert_eq!(maze.idx_to_pos(0), (0, 0));
-		assert_eq!(maze.idx_to_pos(2), (2, 0));
-		assert_eq!(maze.idx_to_pos(4), (1, 1));
-		assert_eq!(maze.idx_to_pos(8), (2, 2));
-	}
-
-	#[test]
-	#[should_panic]
-	fn invalid_index_to_position() {
-		let maze = GridMaze::new(3, 3);
-		maze.idx_to_pos(9);
+		let itp = |i:usize| maze.idx_to_pos(i).unwrap();
+		assert_eq!(itp(0), (0, 0));
+		assert_eq!(itp(2), (2, 0));
+		assert_eq!(itp(4), (1, 1));
+		assert_eq!(itp(8), (2, 2));
+		assert_eq!(maze.idx_to_pos(9), None);
 	}
 
 	#[test]
 	fn position_to_index_conversion() {
 		let maze = GridMaze::new(3, 3);
-		assert_eq!(maze.pos_to_idx((0, 0)), 0);
-		assert_eq!(maze.pos_to_idx((2, 0)), 2);
-		assert_eq!(maze.pos_to_idx((1, 1)), 4);
-		assert_eq!(maze.pos_to_idx((2, 2)), 8);
-	}
-
-	#[test]
-	#[should_panic]
-	fn invalid_position_to_index() {
-		let maze = GridMaze::new(3, 3);
-		maze.pos_to_idx((3, 0));
+		let pti = |t: (i32, i32)| maze.pos_to_idx(t).unwrap();
+		assert_eq!(pti((0, 0)), 0);
+		assert_eq!(pti((2, 0)), 2);
+		assert_eq!(pti((1, 1)), 4);
+		assert_eq!(pti((2, 2)), 8);
+		assert_eq!(maze.pos_to_idx((3, 0)), None);
 	}
 }

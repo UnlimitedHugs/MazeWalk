@@ -100,16 +100,24 @@ fn spawn_initial_chunk(
 	cmd.insert_resource(maze_assets);
 
 	let camera_transform = {
-		let (entrance_x, entrance_z) =
-			maze_to_grid(first_chunk.maze.idx_to_pos(first_chunk.entrance.node));
+		let (entrance_x, entrance_z) = maze_to_grid(
+			first_chunk
+				.maze
+				.idx_to_pos(first_chunk.entrance.node)
+				.expect("resolve entrance index"),
+		);
 		let random_entrance_neighbor = first_chunk
 			.maze
 			.get_links(&first_chunk.maze[first_chunk.entrance.node])
 			.into_iter()
 			.choose(&mut thread_rng())
 			.expect("entrance neighbor");
-		let (neighbor_x, neighbor_z) =
-			maze_to_grid(first_chunk.maze.idx_to_pos(random_entrance_neighbor.pos()));
+		let (neighbor_x, neighbor_z) = maze_to_grid(
+			first_chunk
+				.maze
+				.idx_to_pos(random_entrance_neighbor.pos())
+				.expect("resolve entrance neighbor index"),
+		);
 		GlobalTransform::from_translation(vec3(entrance_x as f32, 0., entrance_z as f32))
 			.looking_at(vec3(neighbor_x as f32, 0., neighbor_z as f32), Vec3::Y)
 	};
@@ -409,7 +417,11 @@ fn spawn_additional_chunk(
 		let (next_chunk_coords, next_chunk_entrance) = {
 			let base_chunk = last_chunk_data;
 			let next_chunk_dir: IVec2 = base_chunk.exit.side.get_offset().into();
-			let exit_pos: IVec2 = base_chunk.maze.idx_to_pos(base_chunk.exit.node).into();
+			let exit_pos: IVec2 = base_chunk
+				.maze
+				.idx_to_pos(base_chunk.exit.node)
+				.expect("resolve exit node index")
+				.into();
 			let next_chunk_coords = base_chunk.coords.0 + next_chunk_dir;
 			let maze_size = base_chunk.maze.dimensions().0 as i32;
 			let entrance_pos = (base_chunk.coords.0 * maze_size + exit_pos + next_chunk_dir)
@@ -522,7 +534,10 @@ fn generate_chunk(
 
 	{
 		let mut make_outer_wall_passage = |n: &SidedNode| {
-			let (x, z) = maze_to_grid(maze.idx_to_pos(n.node));
+			let (x, z) = maze_to_grid(
+				maze.idx_to_pos(n.node)
+					.expect("resolve entrance/exit index"),
+			);
 			let (x_off, z_off) = n.side.get_offset();
 			grid[(z + z_off) as usize][(x + x_off) as usize] = false;
 		};
