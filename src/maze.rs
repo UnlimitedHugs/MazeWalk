@@ -35,12 +35,13 @@ impl Plugin for MazePlugin {
 		})
 		.register_shader_uniforms::<Uniforms>()
 		.add_event::<ChunkEntered>()
-		.add_startup_system(build_maze.system())
+		.add_startup_system(spawn_initial_chunk.system())
 		.add_system(camera_look_input.system().label(CameraLookInput))
 		.add_system(expand_euler_rotation.system().after(CameraLookInput))
 		.add_system(player_movement.system().label(PlayerMovement))
 		.add_system(collide_with_walls.system().after(PlayerMovement))
 		.add_system(track_current_chunk.system().after(PlayerMovement))
+		.add_system(spawn_additional_chunk.system())
 		.add_system(update_hover_mode.system())
 		.add_system_to_stage(RenderStage::PreRender, update_uniforms.system());
 	}
@@ -50,106 +51,63 @@ const PI: f32 = std::f32::consts::PI;
 const CELL_SIZE: f32 = 1.0;
 const CHUNK_SIZE: i32 = 17;
 
-struct Wall;
+struct MazeAssets {
+	cube_mesh: Handle<Mesh>,
+	shader: Handle<Shader>,
+	wall_colors: Vec<Color>,
+}
 
-fn build_maze(
+fn spawn_initial_chunk(
 	mut cmd: Commands,
 	mut meshes: ResMut<Assets<Mesh>>,
 	mut shaders: ResMut<Assets<Shader>>,
 ) {
-	let mut rng = thread_rng();
-	let cube_mesh = meshes.add(Cube::new(CELL_SIZE).into());
-	let shader = shaders.add(Shader::new(
-		shader::VERTEX,
-		shader::FRAGMENT,
-		&shader::TEXTURES,
-		&shader::UNIFORMS,
-	));
+	let maze_assets = {
+		let mut rng = thread_rng();
+		let cube_mesh = meshes.add(Cube::new(CELL_SIZE).into());
+		let shader = shaders.add(Shader::new(
+			shader::VERTEX,
+			shader::FRAGMENT,
+			&shader::TEXTURES,
+			&shader::UNIFORMS,
+		));
 
-	fn get_next_chunk_config(base_chunk: &Chunk) -> (ChunkCoords, SidedNode) {
-		let next_chunk_dir: IVec2 = base_chunk.exit.side.get_offset().into();
-		let exit_pos: IVec2 = base_chunk.maze.idx_to_pos(base_chunk.exit.node).into();
-		let next_chunk_coords = base_chunk.coords.0 + next_chunk_dir;
-		let maze_size = base_chunk.maze.dimensions().0 as i32;
-		let entrance_pos = (base_chunk.coords.0 * maze_size + exit_pos + next_chunk_dir)
-			- next_chunk_coords * maze_size;
-		debug_assert!(
-			entrance_pos.x >= 0
-				&& entrance_pos.y >= 0
-				&& entrance_pos.x < maze_size
-				&& entrance_pos.y < maze_size
-		);
-		let entrance_index = GridMaze::idx_1d(
-			entrance_pos.y as usize,
-			entrance_pos.x as usize,
-			maze_size as usize,
-		);
-		(
-			ChunkCoords(next_chunk_coords),
-			SidedNode {
-				node: entrance_index,
-				side: base_chunk.exit.side.opposite(),
-			},
-		)
-	}
-
-	let wall_colors = {
-		let num_samples = 8;
-		let hue_offset = rng.gen_range(0.0..360.0);
-		let mut colors = (0..num_samples)
-			.map(|i| {
-				Color::hsl(
-					(((360 / num_samples) * i) as f32 + hue_offset) % 360.,
-					0.4,
-					0.8,
-				)
-			})
-			.collect::<Vec<_>>();
-		colors.shuffle(&mut rng);
-		colors
+		let wall_colors = {
+			let num_samples = 8;
+			let hue_offset = rng.gen_range(0.0..360.0);
+			let mut colors = (0..num_samples)
+				.map(|i| {
+					Color::hsl(
+						(((360 / num_samples) * i) as f32 + hue_offset) % 360.,
+						0.4,
+						0.8,
+					)
+				})
+				.collect::<Vec<_>>();
+			colors.shuffle(&mut rng);
+			colors
+		};
+		MazeAssets {
+			cube_mesh,
+			shader,
+			wall_colors,
+		}
 	};
 
-	let first_chunk = generate_chunk(
-		&mut cmd,
-		cube_mesh.clone(),
-		shader.clone(),
-		0,
-		ChunkCoords::ZERO,
-		None,
-		&wall_colors,
-	);
-	let (second_chunk_offset, second_chunk_entrance) = get_next_chunk_config(&first_chunk);
-	let second_chunk = generate_chunk(
-		&mut cmd,
-		cube_mesh.clone(),
-		shader.clone(),
-		1,
-		second_chunk_offset,
-		Some(second_chunk_entrance),
-		&wall_colors,
-	);
-	let (third_chunk_offset, third_chunk_entrance) = get_next_chunk_config(&second_chunk);
-	let _third_chunk = generate_chunk(
-		&mut cmd,
-		cube_mesh.clone(),
-		shader.clone(),
-		2,
-		third_chunk_offset,
-		Some(third_chunk_entrance),
-		&wall_colors,
-	);
+	let first_chunk = generate_chunk(&mut cmd, &maze_assets, 0, ChunkCoords::ZERO, None);
+	cmd.insert_resource(maze_assets);
 
 	let camera_transform = {
 		let (entrance_x, entrance_z) =
 			maze_to_grid(first_chunk.maze.idx_to_pos(first_chunk.entrance.node));
-		let random_neighbor = first_chunk
+		let random_entrance_neighbor = first_chunk
 			.maze
 			.get_links(&first_chunk.maze[first_chunk.entrance.node])
 			.into_iter()
-			.choose(&mut rng)
+			.choose(&mut thread_rng())
 			.expect("entrance neighbor");
 		let (neighbor_x, neighbor_z) =
-			maze_to_grid(first_chunk.maze.idx_to_pos(random_neighbor.pos()));
+			maze_to_grid(first_chunk.maze.idx_to_pos(random_entrance_neighbor.pos()));
 		GlobalTransform::from_translation(vec3(entrance_x as f32, 0., entrance_z as f32))
 			.looking_at(vec3(neighbor_x as f32, 0., neighbor_z as f32), Vec3::Y)
 	};
@@ -168,6 +126,7 @@ fn build_maze(
 	});
 }
 
+struct Wall;
 #[derive(Clone)]
 struct SidedNode {
 	node: usize,
@@ -197,134 +156,6 @@ impl ChunkCoords {
 			bottom: y + CHUNK_SIZE as f32,
 		}
 	}
-}
-
-fn generate_chunk(
-	cmd: &mut Commands,
-	mesh: Handle<Mesh>,
-	shader: Handle<Shader>,
-	index: usize,
-	coords: ChunkCoords,
-	known_entrance: Option<SidedNode>,
-	wall_colors: &[Color],
-) -> Chunk {
-	let mut rng = thread_rng();
-	const MAZE_SIZE: usize = (CHUNK_SIZE as usize - 1) / 2;
-	let maze = maze_gen::generate(MAZE_SIZE, MAZE_SIZE);
-	let mut grid = {
-		let mut grid = [[true; CHUNK_SIZE as usize]; CHUNK_SIZE as usize];
-		for (maze_z, row) in maze.iter_rows().enumerate() {
-			for (maze_x, node) in row.iter().enumerate() {
-				let (z, x) = (maze_z * 2 + 1, maze_x * 2 + 1);
-				grid[z][x] = false;
-				if maze.has_link(node, GridDirection::Right) {
-					grid[z][x + 1] = false;
-				}
-				if maze.has_link(node, GridDirection::Down) {
-					grid[z + 1][x] = false;
-				}
-			}
-		}
-		grid
-	};
-
-	let make_entrance_passage = known_entrance.is_some();
-	let (entrance, exit) = {
-		let entrance = known_entrance.unwrap_or_else(|| {
-			let side = GridDirection::ALL[rng.gen_range(0..4)];
-			SidedNode {
-				node: maze
-					.get_edge_nodes(side)
-					.choose(&mut rng)
-					.expect("select entrance node")
-					.pos(),
-				side,
-			}
-		});
-		let distances = maze.distances(&maze[entrance.node]);
-		let exit_pair = GridDirection::ALL
-			.iter()
-			.filter(|d| **d != entrance.side)
-			.flat_map(|d| {
-				maze.get_edge_nodes(*d)
-					.iter()
-					.map(|n| (n.pos(), *d))
-					.collect::<Vec<_>>()
-			})
-			.max_by_key(|p| distances.get(&maze[p.0]))
-			.expect("select exit node");
-		(
-			entrance,
-			SidedNode {
-				node: exit_pair.0,
-				side: exit_pair.1,
-			},
-		)
-	};
-
-	{
-		let mut make_outer_wall_passage = |n: &SidedNode| {
-			let (x, z) = maze_to_grid(maze.idx_to_pos(n.node));
-			let (x_off, z_off) = n.side.get_offset();
-			grid[(z + z_off) as usize][(x + x_off) as usize] = false;
-		};
-		make_outer_wall_passage(&exit);
-		if make_entrance_passage {
-			make_outer_wall_passage(&entrance);
-		}
-	}
-
-	let has_block = |x: i32, z: i32| {
-		x >= 0 && x < CHUNK_SIZE && z >= 0 && z < CHUNK_SIZE && grid[z as usize][x as usize]
-	};
-
-	let chunk = Chunk {
-		index,
-		coords,
-		maze,
-		entrance,
-		exit,
-	};
-	let chunk_entity = cmd.spawn_bundle((chunk.clone(),)).id();
-	let wall_color: Vec3 = wall_colors[index % wall_colors.len()].into();
-
-	for x in 0..CHUNK_SIZE {
-		for z in 0..CHUNK_SIZE {
-			if !has_block(x, z) {
-				continue;
-			}
-			let transform =
-				GlobalTransform::from_translation(vec3(x as f32, 0., z as f32) + coords.into());
-			let edges = CollisionEdges {
-				edges: CollisionEdge::ALL
-					.iter()
-					.filter_map(|e| {
-						let (dx, dz) = e.get_direction();
-						if !has_block(x + dx, z + dz) {
-							Some(e)
-						} else {
-							None
-						}
-					})
-					.copied()
-					.collect(),
-			};
-			cmd.spawn_bundle((
-				Wall,
-				transform,
-				mesh.clone(),
-				shader.clone(),
-				Uniforms {
-					model: transform.compute_matrix(),
-					object_color: wall_color,
-					..Default::default()
-				},
-				edges,
-				Parent(chunk_entity),
-			));
-		}
-	}
-	chunk
 }
 
 #[derive(Default)]
@@ -552,6 +383,184 @@ fn track_current_chunk(
 			entered_event.send(ChunkEntered(cam_chunk_ent));
 		}
 	}
+}
+
+fn spawn_additional_chunk(
+	mut cmd: Commands,
+	assets: Res<MazeAssets>,
+	q: Query<(Entity, &Chunk)>,
+	mut entered_event: EventReader<ChunkEntered>,
+) {
+	let (last_chunk_ent, last_chunk_data) = q
+		.iter()
+		.max_by_key(|(_, c)| c.index)
+		.expect("get last chunk");
+	let entered_last_chunk = entered_event
+		.iter()
+		.any(|ChunkEntered(e)| *e == last_chunk_ent);
+	if entered_last_chunk {
+		let (next_chunk_coords, next_chunk_entrance) = {
+			let base_chunk = last_chunk_data;
+			let next_chunk_dir: IVec2 = base_chunk.exit.side.get_offset().into();
+			let exit_pos: IVec2 = base_chunk.maze.idx_to_pos(base_chunk.exit.node).into();
+			let next_chunk_coords = base_chunk.coords.0 + next_chunk_dir;
+			let maze_size = base_chunk.maze.dimensions().0 as i32;
+			let entrance_pos = (base_chunk.coords.0 * maze_size + exit_pos + next_chunk_dir)
+				- next_chunk_coords * maze_size;
+			debug_assert!(
+				entrance_pos.x >= 0
+					&& entrance_pos.y >= 0
+					&& entrance_pos.x < maze_size
+					&& entrance_pos.y < maze_size
+			);
+			let entrance_index = GridMaze::idx_1d(
+				entrance_pos.y as usize,
+				entrance_pos.x as usize,
+				maze_size as usize,
+			);
+			(
+				ChunkCoords(next_chunk_coords),
+				SidedNode {
+					node: entrance_index,
+					side: base_chunk.exit.side.opposite(),
+				},
+			)
+		};
+
+		generate_chunk(
+			&mut cmd,
+			&assets,
+			last_chunk_data.index + 1,
+			next_chunk_coords,
+			Some(next_chunk_entrance),
+		);
+	}
+}
+
+fn generate_chunk(
+	cmd: &mut Commands,
+	assets: &MazeAssets,
+	index: usize,
+	coords: ChunkCoords,
+	known_entrance: Option<SidedNode>,
+) -> Chunk {
+	let mut rng = thread_rng();
+	const MAZE_SIZE: usize = (CHUNK_SIZE as usize - 1) / 2;
+	let maze = maze_gen::generate(MAZE_SIZE, MAZE_SIZE);
+	let mut grid = {
+		let mut grid = [[true; CHUNK_SIZE as usize]; CHUNK_SIZE as usize];
+		for (maze_z, row) in maze.iter_rows().enumerate() {
+			for (maze_x, node) in row.iter().enumerate() {
+				let (z, x) = (maze_z * 2 + 1, maze_x * 2 + 1);
+				grid[z][x] = false;
+				if maze.has_link(node, GridDirection::Right) {
+					grid[z][x + 1] = false;
+				}
+				if maze.has_link(node, GridDirection::Down) {
+					grid[z + 1][x] = false;
+				}
+			}
+		}
+		grid
+	};
+
+	let make_entrance_passage = known_entrance.is_some();
+	let (entrance, exit) = {
+		let entrance = known_entrance.unwrap_or_else(|| {
+			let side = GridDirection::ALL[rng.gen_range(0..4)];
+			SidedNode {
+				node: maze
+					.get_edge_nodes(side)
+					.choose(&mut rng)
+					.expect("select entrance node")
+					.pos(),
+				side,
+			}
+		});
+		let distances = maze.distances(&maze[entrance.node]);
+		let exit_pair = GridDirection::ALL
+			.iter()
+			.filter(|d| **d != entrance.side)
+			.flat_map(|d| {
+				maze.get_edge_nodes(*d)
+					.iter()
+					.map(|n| (n.pos(), *d))
+					.collect::<Vec<_>>()
+			})
+			.max_by_key(|p| distances.get(&maze[p.0]))
+			.expect("select exit node");
+		(
+			entrance,
+			SidedNode {
+				node: exit_pair.0,
+				side: exit_pair.1,
+			},
+		)
+	};
+
+	{
+		let mut make_outer_wall_passage = |n: &SidedNode| {
+			let (x, z) = maze_to_grid(maze.idx_to_pos(n.node));
+			let (x_off, z_off) = n.side.get_offset();
+			grid[(z + z_off) as usize][(x + x_off) as usize] = false;
+		};
+		make_outer_wall_passage(&exit);
+		if make_entrance_passage {
+			make_outer_wall_passage(&entrance);
+		}
+	}
+
+	let has_block = |x: i32, z: i32| {
+		x >= 0 && x < CHUNK_SIZE && z >= 0 && z < CHUNK_SIZE && grid[z as usize][x as usize]
+	};
+
+	let chunk = Chunk {
+		index,
+		coords,
+		maze,
+		entrance,
+		exit,
+	};
+	let chunk_entity = cmd.spawn_bundle((chunk.clone(),)).id();
+	let wall_color: Vec3 = assets.wall_colors[index % assets.wall_colors.len()].into();
+
+	for x in 0..CHUNK_SIZE {
+		for z in 0..CHUNK_SIZE {
+			if !has_block(x, z) {
+				continue;
+			}
+			let transform =
+				GlobalTransform::from_translation(vec3(x as f32, 0., z as f32) + coords.into());
+			let edges = CollisionEdges {
+				edges: CollisionEdge::ALL
+					.iter()
+					.filter_map(|e| {
+						let (dx, dz) = e.get_direction();
+						if !has_block(x + dx, z + dz) {
+							Some(e)
+						} else {
+							None
+						}
+					})
+					.copied()
+					.collect(),
+			};
+			cmd.spawn_bundle((
+				Wall,
+				transform,
+				assets.cube_mesh.clone(),
+				assets.shader.clone(),
+				Uniforms {
+					model: transform.compute_matrix(),
+					object_color: wall_color,
+					..Default::default()
+				},
+				edges,
+				Parent(chunk_entity),
+			));
+		}
+	}
+	chunk
 }
 
 struct CollisionEdges {
