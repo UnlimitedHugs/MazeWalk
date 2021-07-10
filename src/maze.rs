@@ -447,12 +447,12 @@ fn spawn_additional_chunk(
 fn despawn_traversed_chunks(
 	mut cmd: Commands,
 	q: Query<(Entity, &Chunk)>,
-	mut exited_event: EventReader<ChunkExited>,
+	mut entered_event: EventReader<ChunkEntered>,
 ) {
-	for ChunkExited(exited_ent) in exited_event.iter() {
-		let exited_index = q.get(*exited_ent).expect("resolve exited chunk").1.index;
+	for ChunkEntered(entered_ent) in entered_event.iter() {
+		let entered_index = q.get(*entered_ent).expect("resolve entered chunk").1.index;
 		for (ent, chunk) in q.iter() {
-			if chunk.index < exited_index {
+			if entered_index > 0 && chunk.index < entered_index - 1 {
 				cmd.entity(ent).despawn_recursive();
 			}
 		}
