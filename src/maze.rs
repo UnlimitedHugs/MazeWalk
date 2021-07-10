@@ -35,6 +35,7 @@ impl Plugin for MazePlugin {
 		})
 		.register_shader_uniforms::<Uniforms>()
 		.add_event::<ChunkEntered>()
+		.add_event::<ChunkExited>()
 		.add_startup_system(spawn_initial_chunk.system())
 		.add_system(camera_look_input.system().label(CameraLookInput))
 		.add_system(expand_euler_rotation.system().after(CameraLookInput))
@@ -42,6 +43,7 @@ impl Plugin for MazePlugin {
 		.add_system(collide_with_walls.system().after(PlayerMovement))
 		.add_system(track_current_chunk.system().after(PlayerMovement))
 		.add_system(spawn_additional_chunk.system())
+		.add_system(despawn_traversed_chunks.system())
 		.add_system(update_hover_mode.system())
 		.add_system_to_stage(RenderStage::PreRender, update_uniforms.system());
 	}
@@ -366,11 +368,13 @@ impl CollisionEdge {
 }
 
 struct ChunkEntered(Entity);
+struct ChunkExited(Entity);
 
 fn track_current_chunk(
 	q_chunks: Query<(Entity, &Chunk)>,
 	q_cam: Query<&GlobalTransform, With<Camera>>,
 	mut entered_event: EventWriter<ChunkEntered>,
+	mut exited_event: EventWriter<ChunkExited>,
 	mut current_chunk: Local<Option<Entity>>,
 ) {
 	let cam_pos = q_cam.single().unwrap().translation;
@@ -379,6 +383,9 @@ fn track_current_chunk(
 		.find(|(_, c)| c.coords.as_rect().contains(vec2(cam_pos.x, cam_pos.z)));
 	if let Some((cam_chunk_ent, _)) = contains_camera {
 		if *current_chunk != Some(cam_chunk_ent) {
+			if let Some(exited) = *current_chunk {
+				exited_event.send(ChunkExited(exited));
+			}
 			*current_chunk = Some(cam_chunk_ent);
 			entered_event.send(ChunkEntered(cam_chunk_ent));
 		}
@@ -434,6 +441,21 @@ fn spawn_additional_chunk(
 			next_chunk_coords,
 			Some(next_chunk_entrance),
 		);
+	}
+}
+
+fn despawn_traversed_chunks(
+	mut cmd: Commands,
+	q: Query<(Entity, &Chunk)>,
+	mut exited_event: EventReader<ChunkExited>,
+) {
+	for ChunkExited(exited_ent) in exited_event.iter() {
+		let exited_index = q.get(*exited_ent).expect("resolve exited chunk").1.index;
+		for (ent, chunk) in q.iter() {
+			if chunk.index < exited_index {
+				cmd.entity(ent).despawn_recursive();
+			}
+		}
 	}
 }
 
