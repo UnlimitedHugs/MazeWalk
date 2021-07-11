@@ -191,8 +191,12 @@ fn camera_look_input(
 
 fn expand_euler_rotation(
 	mut q: Query<(&mut GlobalTransform, &RotationEuler), Changed<RotationEuler>>,
+	auto_walk: Res<AutoWalkState>,
 ) {
 	// separate system to handle startup value
+	if !auto_walk.disabled {
+		return;
+	}
 	for (mut tx, RotationEuler { yaw, pitch }) in q.iter_mut() {
 		tx.rotation = Quat::from_rotation_ypr(*yaw, *pitch, 0.);
 	}
@@ -473,8 +477,10 @@ fn despawn_traversed_chunks(
 
 #[derive(Default)]
 struct AutoWalkState {
-	source_position: Vec3,
-	target_position: Vec3,
+	translation_from: Vec3,
+	translation_to: Vec3,
+	rotation_from: Quat,
+	rotation_to: Quat,
 	tween_progress: Option<f32>,
 	heading: Option<GridDirection>,
 	disabled: bool,
@@ -496,12 +502,15 @@ fn auto_walk(
 	if let Some(mut t) = state.tween_progress {
 		let delta = time.delta_seconds()
 			* (if input.pressed(KeyCode::LShift) {
-				10.
+				5.
 			} else {
 				1.
 			});
 		t = (t + delta).min(1.0);
-		cam_transform.translation = state.source_position.lerp(state.target_position, t);
+		cam_transform.translation = state.translation_from.lerp(state.translation_to, t);
+		cam_transform.rotation = state
+			.rotation_from
+			.slerp(state.rotation_to, (t * 2.).min(1.0));
 		state.tween_progress = (t < 1.0).then(|| t);
 	}
 	if state.tween_progress.is_none() && !state.disabled {
@@ -526,9 +535,7 @@ fn auto_walk(
 					GridDirection::ALL
 						.iter()
 						.min_by_key(|d| {
-							let direction_angle =
-								Vec2::Y.angle_between(d.get_offset().to_vec2() * vec2(1., -1.));
-							Quat::from_rotation_y(direction_angle)
+							d.to_rotation()
 								.angle_between(camera_yaw)
 								.to_degrees()
 								.round() as i32
@@ -580,8 +587,19 @@ fn auto_walk(
 
 				if let Some((direction, neighbor_node_position)) = heading {
 					state.heading = Some(direction);
-					state.source_position = cam_transform.translation;
-					state.target_position = neighbor_node_position;
+					state.translation_from = cam_transform.translation;
+					state.translation_to = neighbor_node_position;
+					state.rotation_from = cam_transform.rotation;
+					state.rotation_to = direction.to_rotation();
+
+					let rotation_dot = state.rotation_from.dot(state.rotation_to);
+					if rotation_dot.abs() < 0.001 {
+						// always turn left when reversing
+						state.rotation_to = state.rotation_from * Quat::from_rotation_y(PI);
+					} else if rotation_dot < 0. {
+						// turn left or right, whichever is closest
+						state.rotation_from = -state.rotation_from;
+					}
 					state.tween_progress = Some(0.);
 				}
 			}
@@ -773,6 +791,12 @@ fn grid_to_maze((x, z): (i32, i32)) -> (i32, i32) {
 
 fn node_to_world(n: &GridNode, c: &Chunk) -> Vec3 {
 	maze_to_grid(c.maze.idx_to_pos(n.idx())).to_vec3() + c.coords.to_world_pos()
+}
+
+impl GridDirection {
+	fn to_rotation(self) -> Quat {
+		Quat::from_rotation_y(Vec2::Y.angle_between(self.get_offset().to_vec2() * vec2(1., -1.)))
+	}
 }
 
 trait TupleVecConversion {
