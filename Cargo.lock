@@ -567,6 +567,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9ea835d29036a4087793836fa931b08837ad5e957da9e23886b29586fb9b6650"
 
 [[package]]
+name = "easer"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8dde460cecb776d6524d53ca7acf960561686a620d3791c0dc56c3ada406191a"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
 name = "env_logger"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -829,6 +838,7 @@ version = "0.1.0"
 dependencies = [
  "bevy",
  "bevy_miniquad",
+ "easer",
  "miniquad",
  "rand",
 ]

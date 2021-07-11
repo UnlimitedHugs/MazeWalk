@@ -11,6 +11,7 @@ use bevy::{
 	math::{vec2, vec3},
 	prelude::*,
 };
+use easer::functions::{Quad, Easing};
 use miniquad::{Comparison, CullFace, PipelineParams};
 use rand::{seq::IteratorRandom, seq::SliceRandom, thread_rng, Rng};
 
@@ -508,9 +509,8 @@ fn auto_walk(
 			});
 		t = (t + delta).min(1.0);
 		cam_transform.translation = state.translation_from.lerp(state.translation_to, t);
-		cam_transform.rotation = state
-			.rotation_from
-			.slerp(state.rotation_to, (t * 2.).min(1.0));
+		let rotation_t = Quad::ease_in_out((t * 2.).min(1.0), 0., 1., 1.);
+		cam_transform.rotation = state.rotation_from.slerp(state.rotation_to, rotation_t);
 		state.tween_progress = (t < 1.0).then(|| t);
 	}
 	if state.tween_progress.is_none() && !state.disabled {
