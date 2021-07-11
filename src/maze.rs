@@ -103,24 +103,16 @@ fn spawn_initial_chunk(
 	cmd.insert_resource(maze_assets);
 
 	let camera_transform = {
-		let (entrance_x, entrance_z) = maze_to_grid(
-			first_chunk
-				.maze
-				.idx_to_pos(first_chunk.entrance.node)
-				.expect("resolve entrance index"),
-		);
+		let (entrance_x, entrance_z) =
+			maze_to_grid(first_chunk.maze.idx_to_pos(first_chunk.entrance.node));
 		let random_entrance_neighbor = first_chunk
 			.maze
 			.get_links(&first_chunk.maze[first_chunk.entrance.node])
 			.into_iter()
 			.choose(&mut thread_rng())
 			.expect("entrance neighbor");
-		let (neighbor_x, neighbor_z) = maze_to_grid(
-			first_chunk
-				.maze
-				.idx_to_pos(random_entrance_neighbor.pos())
-				.expect("resolve entrance neighbor index"),
-		);
+		let (neighbor_x, neighbor_z) =
+			maze_to_grid(first_chunk.maze.idx_to_pos(random_entrance_neighbor.idx()));
 		GlobalTransform::from_translation(vec3(entrance_x as f32, 0., entrance_z as f32))
 			.looking_at(vec3(neighbor_x as f32, 0., neighbor_z as f32), Vec3::Y)
 	};
@@ -157,7 +149,7 @@ struct Chunk {
 struct ChunkCoords(IVec2);
 impl ChunkCoords {
 	const ZERO: ChunkCoords = ChunkCoords(IVec2::ZERO);
-	fn as_rect(self) -> Rect<f32> {
+	fn to_rect(self) -> Rect<f32> {
 		let (x, y) = (
 			(self.0.x * CHUNK_SIZE) as f32,
 			(self.0.y * CHUNK_SIZE) as f32,
@@ -400,7 +392,7 @@ fn track_current_chunk(
 	let cam_pos = q_cam.single().unwrap().translation;
 	let contains_camera = q_chunks
 		.iter()
-		.find(|(_, c)| c.coords.as_rect().contains(vec2(cam_pos.x, cam_pos.z)));
+		.find(|(_, c)| c.coords.to_rect().contains(vec2(cam_pos.x, cam_pos.z)));
 	if let Some((cam_chunk_ent, _)) = contains_camera {
 		if current_chunk.0 != Some(cam_chunk_ent) {
 			if let Some(exited) = current_chunk.0 {
@@ -429,11 +421,7 @@ fn spawn_additional_chunk(
 		let (next_chunk_coords, next_chunk_entrance) = {
 			let base_chunk = last_chunk_data;
 			let next_chunk_dir: IVec2 = base_chunk.exit.side.get_offset().into();
-			let exit_pos: IVec2 = base_chunk
-				.maze
-				.idx_to_pos(base_chunk.exit.node)
-				.expect("resolve exit node index")
-				.into();
+			let exit_pos: IVec2 = base_chunk.maze.idx_to_pos(base_chunk.exit.node).into();
 			let next_chunk_coords = base_chunk.coords.0 + next_chunk_dir;
 			let maze_size = base_chunk.maze.dimensions().0 as i32;
 			let entrance_pos = (base_chunk.coords.0 * maze_size + exit_pos + next_chunk_dir)
@@ -554,7 +542,7 @@ fn auto_walk(
 
 				let heading = {
 					let get_linked_neighbor_position = |dir: GridDirection| {
-						if node_near_camera.pos() == current_chunk.exit.node
+						if node_near_camera.idx() == current_chunk.exit.node
 							&& dir == current_chunk.exit.side
 						{
 							// next chunk entrance
@@ -637,7 +625,7 @@ fn generate_chunk(
 					.get_edge_nodes(side)
 					.choose(&mut rng)
 					.expect("select entrance node")
-					.pos(),
+					.idx(),
 				side,
 			}
 		});
@@ -648,7 +636,7 @@ fn generate_chunk(
 			.flat_map(|d| {
 				maze.get_edge_nodes(*d)
 					.iter()
-					.map(|n| (n.pos(), *d))
+					.map(|n| (n.idx(), *d))
 					.collect::<Vec<_>>()
 			})
 			.max_by_key(|p| distances.get(&maze[p.0]))
@@ -664,10 +652,7 @@ fn generate_chunk(
 
 	{
 		let mut make_outer_wall_passage = |n: &SidedNode| {
-			let (x, z) = maze_to_grid(
-				maze.idx_to_pos(n.node)
-					.expect("resolve entrance/exit index"),
-			);
+			let (x, z) = maze_to_grid(maze.idx_to_pos(n.node));
 			let (x_off, z_off) = n.side.get_offset();
 			grid[(z + z_off) as usize][(x + x_off) as usize] = false;
 		};
@@ -787,7 +772,7 @@ fn grid_to_maze((x, z): (i32, i32)) -> (i32, i32) {
 }
 
 fn node_to_world(n: &GridNode, c: &Chunk) -> Vec3 {
-	maze_to_grid(c.maze.idx_to_pos(n.pos()).unwrap()).to_vec3() + c.coords.to_world_pos()
+	maze_to_grid(c.maze.idx_to_pos(n.idx())).to_vec3() + c.coords.to_world_pos()
 }
 
 trait TupleVecConversion {

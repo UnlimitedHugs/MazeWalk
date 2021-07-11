@@ -53,12 +53,12 @@ impl GridMaze {
 	}
 
 	/// returns the (col, row) position of a node with the given index in the maze
-	/// return None if index is out of bounds
-	pub fn idx_to_pos(&self, idx: usize) -> Option<(i32, i32)> {
+	/// panics if index is out of bounds
+	pub fn idx_to_pos(&self, idx: usize) -> (i32, i32) {
 		if idx < self.len() {
-			Some(((idx % self.cols) as i32, (idx / self.cols) as i32))
+			((idx % self.cols) as i32, (idx / self.cols) as i32)
 		} else {
-			None
+			panic!("maze node index out of bounds: {}", idx)
 		}
 	}
 
@@ -83,14 +83,14 @@ impl GridMaze {
 	/// creating a link from node1 => node2,  a link is also created from node2 => node1
 	pub fn link(&mut self, node1: &GridNode, node2: &GridNode, bi_link: bool) {
 		self.links
-			.entry(node1.pos())
+			.entry(node1.idx())
 			.or_insert_with(|| vec![])
-			.push(node2.pos());
+			.push(node2.idx());
 		if bi_link {
 			self.links
-				.entry(node2.pos())
+				.entry(node2.idx())
 				.or_insert_with(|| vec![])
-				.push(node1.pos());
+				.push(node1.idx());
 		}
 	}
 
@@ -98,7 +98,7 @@ impl GridMaze {
 	// In this particular maze, each node can have at most 4 links, or edges, to another Node
 	// If the given node doesn't link to anything, an empty Vector is returned
 	pub fn get_links(&self, node: &GridNode) -> Vec<GridNode> {
-		match self.links.get(&node.pos()) {
+		match self.links.get(&node.idx()) {
 			Some(linked_pos) => linked_pos.iter().map(|pos| self.nodes[*pos]).collect(),
 			None => Vec::new(),
 		}
@@ -107,8 +107,8 @@ impl GridMaze {
 	/// returns `true` if there is a link between `node1` and `node2`, else `false`. Note this
 	/// function only checks one-way links, it will not check for a link between `node2` and `node1`
 	pub fn has_node_link(&self, node1: &GridNode, node2: &GridNode) -> bool {
-		match self.links.get(&node1.pos()) {
-			Some(node_links) => node_links.contains(&node2.pos()),
+		match self.links.get(&node1.idx()) {
+			Some(node_links) => node_links.contains(&node2.idx()),
 			None => false,
 		}
 	}
@@ -185,7 +185,7 @@ impl GridMaze {
 	}
 
 	pub fn up(&self, node: &GridNode) -> Option<GridNode> {
-		let node_index = node.pos();
+		let node_index = node.idx();
 		if node_index > self.cols {
 			self.nodes.get(node_index - self.cols).copied()
 		} else {
@@ -194,13 +194,13 @@ impl GridMaze {
 	}
 
 	pub fn down(&self, node: &GridNode) -> Option<GridNode> {
-		self.nodes.get(node.pos() + self.cols).copied()
+		self.nodes.get(node.idx() + self.cols).copied()
 	}
 
 	pub fn right(&self, node: &GridNode) -> Option<GridNode> {
 		// if the node is not at the right edge of the maze
-		if node.pos() % self.cols + 1 != self.cols {
-			self.nodes.get(node.pos() + 1).copied()
+		if node.idx() % self.cols + 1 != self.cols {
+			self.nodes.get(node.idx() + 1).copied()
 		} else {
 			None
 		}
@@ -208,8 +208,8 @@ impl GridMaze {
 
 	pub fn left(&self, node: &GridNode) -> Option<GridNode> {
 		// if node is not on the left edge of the maze
-		if node.pos() % self.cols != 0 {
-			self.nodes.get(node.pos() - 1).copied()
+		if node.idx() % self.cols != 0 {
+			self.nodes.get(node.idx() - 1).copied()
 		} else {
 			None
 		}
@@ -337,7 +337,7 @@ impl GridMaze {
 		while !pending.is_empty() {
 			// sort pending so that cells with lowest weight are at the **end** of pending
 			pending
-				.sort_unstable_by(|&an, &bn| self[bn.pos()].weight().cmp(&self[an.pos()].weight()));
+				.sort_unstable_by(|&an, &bn| self[bn.idx()].weight().cmp(&self[an.idx()].weight()));
 
 			// pop the last position from pending, it will have the lowest weight
 			let cur_node = pending.pop().unwrap();
@@ -348,7 +348,7 @@ impl GridMaze {
 				// the total weight of moving into a neighboring node is the total weight
 				// of the current path so far, plus the weight of the neighbor
 				let total_weight =
-					weights.get(&cur_node).unwrap() + self[neighbor_node.pos()].weight() as i32;
+					weights.get(&cur_node).unwrap() + self[neighbor_node.idx()].weight() as i32;
 
 				// if the cost of moving into neighbor has not been recorded in the weights vector
 				// OR the total cost of moving to neighbor is less than the current weight
@@ -508,10 +508,10 @@ mod tests {
 		let n1 = maze[0];
 		let n2 = maze[1];
 		maze.link(&n1, &n2, true);
-		assert!(maze.links.contains_key(&n1.pos()));
-		assert!(maze.links.get(&n1.pos()).unwrap().contains(&n2.pos()));
-		assert!(maze.links.contains_key(&n2.pos()));
-		assert!(maze.links.get(&n2.pos()).unwrap().contains(&n1.pos()));
+		assert!(maze.links.contains_key(&n1.idx()));
+		assert!(maze.links.get(&n1.idx()).unwrap().contains(&n2.idx()));
+		assert!(maze.links.contains_key(&n2.idx()));
+		assert!(maze.links.get(&n2.idx()).unwrap().contains(&n1.idx()));
 	}
 
 	#[test]
@@ -531,7 +531,7 @@ mod tests {
 		let maze = GridMaze::new(3, 3);
 		// get the node at row 1, column 1, who's one-dimensional index should = 4;
 		let node11 = maze[4];
-		assert_eq!(node11.pos(), 4);
+		assert_eq!(node11.idx(), 4);
 	}
 
 	#[test]
@@ -643,12 +643,18 @@ mod tests {
 	#[test]
 	fn index_to_position_conversion() {
 		let maze = GridMaze::new(3, 3);
-		let itp = |i:usize| maze.idx_to_pos(i).unwrap();
+		let itp = |i:usize| maze.idx_to_pos(i);
 		assert_eq!(itp(0), (0, 0));
 		assert_eq!(itp(2), (2, 0));
 		assert_eq!(itp(4), (1, 1));
 		assert_eq!(itp(8), (2, 2));
-		assert_eq!(maze.idx_to_pos(9), None);
+	}
+
+	#[test]
+	#[should_panic]
+	fn invalid_index_to_position() {
+		let maze = GridMaze::new(3, 3);
+		maze.idx_to_pos(9);
 	}
 
 	#[test]
