@@ -407,7 +407,7 @@ impl GridMaze {
 	}
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum GridDirection {
 	Up,
 	Right,
@@ -438,6 +438,19 @@ impl GridDirection {
 			GridDirection::Right => GridDirection::Left,
 			GridDirection::Down => GridDirection::Up,
 			GridDirection::Left => GridDirection::Right,
+		}
+	}
+
+	pub fn rotate_cw(self) -> GridDirection {
+		self.rotate_ccw().rotate_ccw().rotate_ccw()
+	}
+
+	pub fn rotate_ccw(self) -> GridDirection {
+		match self {
+			GridDirection::Up => GridDirection::Left,
+			GridDirection::Left => GridDirection::Down,
+			GridDirection::Down => GridDirection::Right,
+			GridDirection::Right => GridDirection::Up,
 		}
 	}
 }

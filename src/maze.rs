@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use super::{
-	maze_gen::{self, GridDirection, GridMaze},
+	maze_gen::{self, GridDirection, GridMaze, GridNode},
 	rendering::*,
 	utils::Color,
 	utils::Cube,
@@ -36,15 +36,18 @@ impl Plugin for MazePlugin {
 		.register_shader_uniforms::<Uniforms>()
 		.add_event::<ChunkEntered>()
 		.add_event::<ChunkExited>()
+		.init_resource::<CurrentChunk>()
+		.init_resource::<AutoWalkState>()
 		.add_startup_system(spawn_initial_chunk.system())
 		.add_system(camera_look_input.system().label(CameraLookInput))
 		.add_system(expand_euler_rotation.system().after(CameraLookInput))
 		.add_system(player_movement.system().label(PlayerMovement))
 		.add_system(collide_with_walls.system().after(PlayerMovement))
 		.add_system(track_current_chunk.system().after(PlayerMovement))
+		.add_system(update_hover_mode.system())
 		.add_system(spawn_additional_chunk.system())
 		.add_system(despawn_traversed_chunks.system())
-		.add_system(update_hover_mode.system())
+		.add_system(auto_walk.system())
 		.add_system_to_stage(RenderStage::PreRender, update_uniforms.system());
 	}
 }
@@ -165,6 +168,13 @@ impl ChunkCoords {
 			top: y,
 			bottom: y + CHUNK_SIZE as f32,
 		}
+	}
+	fn to_world_pos(self) -> Vec3 {
+		vec3(
+			(self.0.x * CHUNK_SIZE) as f32,
+			0.,
+			(self.0.y * CHUNK_SIZE) as f32,
+		)
 	}
 }
 
@@ -375,6 +385,8 @@ impl CollisionEdge {
 	}
 }
 
+#[derive(Default)]
+struct CurrentChunk(Option<Entity>);
 struct ChunkEntered(Entity);
 struct ChunkExited(Entity);
 
@@ -383,18 +395,18 @@ fn track_current_chunk(
 	q_cam: Query<&GlobalTransform, With<Camera>>,
 	mut entered_event: EventWriter<ChunkEntered>,
 	mut exited_event: EventWriter<ChunkExited>,
-	mut current_chunk: Local<Option<Entity>>,
+	mut current_chunk: ResMut<CurrentChunk>,
 ) {
 	let cam_pos = q_cam.single().unwrap().translation;
 	let contains_camera = q_chunks
 		.iter()
 		.find(|(_, c)| c.coords.as_rect().contains(vec2(cam_pos.x, cam_pos.z)));
 	if let Some((cam_chunk_ent, _)) = contains_camera {
-		if *current_chunk != Some(cam_chunk_ent) {
-			if let Some(exited) = *current_chunk {
+		if current_chunk.0 != Some(cam_chunk_ent) {
+			if let Some(exited) = current_chunk.0 {
 				exited_event.send(ChunkExited(exited));
 			}
-			*current_chunk = Some(cam_chunk_ent);
+			current_chunk.0 = Some(cam_chunk_ent);
 			entered_event.send(ChunkEntered(cam_chunk_ent));
 		}
 	}
@@ -466,6 +478,124 @@ fn despawn_traversed_chunks(
 		for (ent, chunk) in q.iter() {
 			if entered_index > 0 && chunk.index < entered_index - 1 {
 				cmd.entity(ent).despawn_recursive();
+			}
+		}
+	}
+}
+
+#[derive(Default)]
+struct AutoWalkState {
+	source_position: Vec3,
+	target_position: Vec3,
+	tween_progress: Option<f32>,
+	heading: Option<GridDirection>,
+	disabled: bool,
+}
+
+fn auto_walk(
+	mut q_cam: Query<(&mut GlobalTransform, &RotationEuler), With<Camera>>,
+	q_chunks: Query<(Entity, &Chunk)>,
+	current_chunk_res: Res<CurrentChunk>,
+	mut state: ResMut<AutoWalkState>,
+	time: Res<Time>,
+	input: Res<Input<KeyCode>>,
+) {
+	let (mut cam_transform, cam_euler) = q_cam.single_mut().expect("get camera position");
+	if input.just_pressed(KeyCode::X) {
+		state.disabled = !state.disabled;
+		state.heading = None;
+	}
+	if let Some(mut t) = state.tween_progress {
+		let delta = time.delta_seconds()
+			* (if input.pressed(KeyCode::LShift) {
+				10.
+			} else {
+				1.
+			});
+		t = (t + delta).min(1.0);
+		cam_transform.translation = state.source_position.lerp(state.target_position, t);
+		state.tween_progress = (t < 1.0).then(|| t);
+	}
+	if state.tween_progress.is_none() && !state.disabled {
+		if let Some(current_chunk_ent) = current_chunk_res.0 {
+			let (_, current_chunk) = q_chunks
+				.get(current_chunk_ent)
+				.expect("resolve current chunk");
+			let cam_pos_relative_to_grid =
+				cam_transform.translation - current_chunk.coords.to_world_pos();
+			let cam_grid_pos = (
+				cam_pos_relative_to_grid.x.round() as i32,
+				cam_pos_relative_to_grid.z.round() as i32,
+			);
+			if let Some(node_near_camera) = current_chunk
+				.maze
+				.pos_to_idx(grid_to_maze(cam_grid_pos))
+				.map(|idx| current_chunk.maze[idx])
+			{
+				let maze = &current_chunk.maze;
+				let get_direction_from_camera = || {
+					let camera_yaw = Quat::from_rotation_y(cam_euler.yaw);
+					GridDirection::ALL
+						.iter()
+						.min_by_key(|d| {
+							let direction_angle =
+								Vec2::Y.angle_between(d.get_offset().to_vec2() * vec2(1., -1.));
+							Quat::from_rotation_y(direction_angle)
+								.angle_between(camera_yaw)
+								.to_degrees()
+								.round() as i32
+						})
+						.copied()
+						.unwrap()
+				};
+
+				let previous_heading = state.heading.unwrap_or_else(get_direction_from_camera);
+				let is_first_step = state.heading.is_none();
+
+				let heading = {
+					let get_linked_neighbor_position = |dir: GridDirection| {
+						if node_near_camera.pos() == current_chunk.exit.node
+							&& dir == current_chunk.exit.side
+						{
+							// next chunk entrance
+							q_chunks
+								.iter()
+								.find(|(_, c)| c.index == current_chunk.index + 1)
+								.map(|(_, c)| node_to_world(&c.maze[c.entrance.node], &c))
+						} else if let (true, Some(neighbor_node)) = (
+							maze.has_link(&node_near_camera, dir),
+							maze.get_neighbor(&node_near_camera, dir),
+						) {
+							// node on current grid
+							Some(node_to_world(&neighbor_node, &current_chunk))
+						} else {
+							// grid edge or no node connection
+							None
+						}
+					};
+					// test walkable directions
+					let mut valid_heading = None;
+					let mut current_dir = previous_heading;
+					if !is_first_step {
+						current_dir = current_dir.rotate_cw();
+					}
+					for _ in 0..4 {
+						if let Some(pos) = get_linked_neighbor_position(current_dir) {
+							valid_heading = Some((current_dir, pos));
+							break;
+						} else {
+							current_dir = current_dir.rotate_ccw();
+						}
+					}
+					valid_heading
+				};
+
+				if let Some((direction, neighbor_node_position)) = heading {
+					state.heading = Some(direction);
+					state.source_position = cam_transform.translation;
+					state.target_position = neighbor_node_position;
+					state.tween_progress = Some(0.);
+				}
 			}
 		}
 	}
@@ -566,8 +696,9 @@ fn generate_chunk(
 			if !has_block(x, z) {
 				continue;
 			}
-			let transform =
-				GlobalTransform::from_translation(vec3(x as f32, 0., z as f32) + coords.into());
+			let transform = GlobalTransform::from_translation(
+				vec3(x as f32, 0., z as f32) + coords.to_world_pos(),
+			);
 			let edges = CollisionEdges {
 				edges: CollisionEdge::ALL
 					.iter()
@@ -647,14 +778,30 @@ impl RectExtension for Rect<f32> {
 	}
 }
 
-impl From<ChunkCoords> for Vec3 {
-	fn from(o: ChunkCoords) -> Self {
-		vec3((o.0.x * CHUNK_SIZE) as f32, 0., (o.0.y * CHUNK_SIZE) as f32)
-	}
-}
-
 fn maze_to_grid((x, z): (i32, i32)) -> (i32, i32) {
 	(x * 2 + 1, z * 2 + 1)
+}
+
+fn grid_to_maze((x, z): (i32, i32)) -> (i32, i32) {
+	((x - 1) / 2, (z - 1) / 2)
+}
+
+fn node_to_world(n: &GridNode, c: &Chunk) -> Vec3 {
+	maze_to_grid(c.maze.idx_to_pos(n.pos()).unwrap()).to_vec3() + c.coords.to_world_pos()
+}
+
+trait TupleVecConversion {
+	fn to_vec2(self) -> Vec2;
+	fn to_vec3(self) -> Vec3;
+}
+impl TupleVecConversion for (i32, i32) {
+	fn to_vec2(self) -> Vec2 {
+		Vec2::new(self.0 as f32, self.1 as f32)
+	}
+
+	fn to_vec3(self) -> Vec3 {
+		Vec3::new(self.0 as f32, 0., self.1 as f32)
+	}
 }
 
 mod shader {
