@@ -12,3 +12,5 @@ miniquad = { git = "https://github.com/not-fl3/miniquad" }
 bevy_miniquad = { path = "bevy_miniquad" }
 rand = "0.8.4"
 easer = "0.2.1"
+png = "0.16.8"
+anyhow = "1.0"

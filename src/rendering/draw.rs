@@ -1,6 +1,4 @@
-use super::mesh::Mesh;
-use super::shader::Shader;
-use super::texture::Texture;
+use super::{mesh::Mesh, shader::Shader, texture::Texture, TextureBindings};
 use bevy::ecs::component::Component;
 use bevy::{asset::HandleId, prelude::*, utils::HashMap};
 use bevy_miniquad::Context;
@@ -24,7 +22,7 @@ pub fn render<Uniforms: Component>(
 	query: Query<(
 		&Handle<Mesh>,
 		&Handle<Shader>,
-		Option<&Handle<Texture>>,
+		Option<&TextureBindings>,
 		&Uniforms,
 	)>,
 ) {
@@ -37,17 +35,22 @@ pub fn render<Uniforms: Component>(
 		stencil: None,
 	});
 	let mut current_shader: Option<HandleId> = None;
-	for (mesh_handle, shader_handle, optional_texture, uniforms) in grouped_by_shader.into_iter() {
+	for (mesh_handle, shader_handle, optional_textures, uniforms) in grouped_by_shader.into_iter() {
 		if let (Some(mesh), Some(pipeline)) = (
 			resources.mesh_buffers.get(mesh_handle),
 			resources.pipelines.get(shader_handle),
 		) {
-			let images = if let Some(texture_handle) = optional_texture {
-				if let Some(texture) = resources.textures.get(texture_handle) {
-					vec![*texture]
-				} else {
+			let images = if let Some(TextureBindings(bindings)) = optional_textures {
+				let resolved = bindings
+					.iter()
+					.filter_map(|h| resources.textures.get(h))
+					.copied()
+					.collect::<Vec<_>>();
+				if resolved.len() < bindings.len() {
+					// not all textures loaded, skip drawing object
 					continue;
 				}
+				resolved
 			} else {
 				vec![]
 			};
