@@ -23,10 +23,16 @@ pub struct Texture {
 pub struct TextureBindings(pub Vec<Handle<Texture>>);
 
 #[derive(Default)]
-pub struct TextureLoadSettings(HashMap<Handle<Texture>, TextureProperties>);
+pub struct TextureLoadSettings {
+	per_asset: HashMap<Handle<Texture>, TextureProperties>,
+	defaults: TextureProperties,
+}
 impl TextureLoadSettings {
-	pub fn add(&mut self, for_tex: Handle<Texture>, params: TextureProperties) {
-		self.0.insert(for_tex, params);
+	// pub fn add(&mut self, for_tex: Handle<Texture>, props: TextureProperties) {
+	// 	self.per_asset.insert(for_tex, props);
+	// }
+	pub fn set_defaults(&mut self, props: TextureProperties) {
+		self.defaults = props;
 	}
 }
 
@@ -54,7 +60,10 @@ pub fn upload_textures(
 	for evt in texture_events.iter() {
 		if let AssetEvent::Created { handle } = evt {
 			if let Some(tex) = textures.get(handle) {
-				let settings = load_settings.0.remove(handle).unwrap_or_default();
+				let settings = load_settings
+					.per_asset
+					.remove(handle)
+					.unwrap_or_else(|| load_settings.defaults);
 				let overwritten = context_resources
 					.textures
 					.insert(

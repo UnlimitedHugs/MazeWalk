@@ -69,6 +69,10 @@ struct MazeAssets {
 	wall_tex_diffuse: Handle<Texture>,
 	wall_tex_normal: Handle<Texture>,
 	surface_mesh: Handle<Mesh>,
+	floor_tex_diffuse: Handle<Texture>,
+	floor_tex_normal: Handle<Texture>,
+	ceiling_tex_diffuse: Handle<Texture>,
+	ceiling_tex_normal: Handle<Texture>,
 }
 
 fn spawn_initial_chunk(
@@ -106,14 +110,16 @@ fn spawn_initial_chunk(
 
 		let floor_mesh = meshes.add(Plane::new(CHUNK_SIZE as f32, CHUNK_SIZE as f32).into());
 
-		let tex_properties = TextureProperties {
+		texture_settings.set_defaults(TextureProperties {
 			wrap: TextureWrap::Repeat,
 			filter: FilterMode::Nearest,
-		};
+		});
 		let wall_tex_diffuse = asset_server.load("wall_diffuse.png");
-		texture_settings.add(wall_tex_diffuse.clone(), tex_properties);
 		let wall_tex_normal = asset_server.load("wall_normal.png");
-		texture_settings.add(wall_tex_normal.clone(), tex_properties);
+		let floor_tex_diffuse = asset_server.load("tiles_diffuse.png");
+		let floor_tex_normal = asset_server.load("tiles_normal.png");
+		let ceiling_tex_diffuse = asset_server.load("concrete_diffuse.png");
+		let ceiling_tex_normal = asset_server.load("concrete_normal.png");
 
 		MazeAssets {
 			cube_mesh,
@@ -122,6 +128,10 @@ fn spawn_initial_chunk(
 			wall_tex_diffuse,
 			wall_tex_normal,
 			surface_mesh: floor_mesh,
+			floor_tex_diffuse,
+			floor_tex_normal,
+			ceiling_tex_diffuse,
+			ceiling_tex_normal,
 		}
 	};
 
@@ -772,10 +782,6 @@ fn generate_chunk(
 	let wall_floor_common_components = (
 		assets.surface_mesh.clone(),
 		assets.shader.clone(),
-		TextureBindings(vec![
-			assets.wall_tex_diffuse.clone(),
-			assets.wall_tex_normal.clone(),
-		]),
 		Uniforms::default(),
 		Parent(chunk_entity),
 	);
@@ -786,16 +792,26 @@ fn generate_chunk(
 	};
 	let floor_transform =
 		GlobalTransform::from_translation(chunk_center + vec3(0., -CELL_SIZE / 2., 0.));
-	cmd.spawn()
-		.insert(floor_transform)
+	cmd.spawn_bundle((
+			floor_transform,
+			TextureBindings(vec![
+				assets.floor_tex_diffuse.clone(),
+				assets.floor_tex_normal.clone(),
+			]),
+		))
 		.insert_bundle(wall_floor_common_components.clone());
 
 	let ceiling_transform = GlobalTransform::from_matrix(
 		Mat4::from_translation(chunk_center + vec3(0., CELL_SIZE / 2., 0.))
 			* Mat4::from_rotation_z(PI),
 	);
-	cmd.spawn()
-		.insert(ceiling_transform)
+	cmd.spawn_bundle((
+			ceiling_transform,
+			TextureBindings(vec![
+				assets.ceiling_tex_diffuse.clone(),
+				assets.ceiling_tex_normal.clone(),
+			]),
+		))
 		.insert_bundle(wall_floor_common_components);
 
 	chunk
