@@ -49,7 +49,12 @@ impl Plugin for MazePlugin {
 		.add_system(spawn_additional_chunk.system())
 		.add_system(despawn_traversed_chunks.system())
 		.add_system(auto_walk.system())
-		.add_system_to_stage(RenderStage::PreRender, update_uniforms.system());
+		.add_system_set_to_stage(
+			RenderStage::PreRender,
+			SystemSet::new()
+				.with_system(update_uniforms_from_transforms.system())
+				.with_system(update_uniforms_from_camera.system()),
+		);
 	}
 }
 
@@ -295,7 +300,15 @@ fn collide_with_walls(
 	}
 }
 
-fn update_uniforms(
+fn update_uniforms_from_transforms(
+	mut q: Query<(&GlobalTransform, &mut Uniforms), Changed<GlobalTransform>>,
+) {
+	for (transform, mut uniforms) in q.iter_mut() {
+		uniforms.model = transform.compute_matrix();
+	}
+}
+
+fn update_uniforms_from_camera(
 	mut q: QuerySet<(
 		Query<(&GlobalTransform, &ViewMatrix, &ProjectionMatrix), With<Camera>>,
 		Query<&mut Uniforms>,
@@ -743,7 +756,6 @@ fn generate_chunk(
 				assets.cube_mesh.clone(),
 				assets.shader.clone(),
 				Uniforms {
-					model: transform.compute_matrix(),
 					object_color: wall_color,
 					..Default::default()
 				},
@@ -764,6 +776,7 @@ fn generate_chunk(
 			assets.wall_tex_diffuse.clone(),
 			assets.wall_tex_normal.clone(),
 		]),
+		Uniforms::default(),
 		Parent(chunk_entity),
 	);
 
@@ -773,27 +786,17 @@ fn generate_chunk(
 	};
 	let floor_transform =
 		GlobalTransform::from_translation(chunk_center + vec3(0., -CELL_SIZE / 2., 0.));
-	cmd.spawn_bundle((
-		floor_transform,
-		Uniforms {
-			model: floor_transform.compute_matrix(),
-			..Default::default()
-		},
-	))
-	.insert_bundle(wall_floor_common_components.clone());
+	cmd.spawn()
+		.insert(floor_transform)
+		.insert_bundle(wall_floor_common_components.clone());
 
 	let ceiling_transform = GlobalTransform::from_matrix(
 		Mat4::from_translation(chunk_center + vec3(0., CELL_SIZE / 2., 0.))
 			* Mat4::from_rotation_z(PI),
 	);
-	cmd.spawn_bundle((
-		ceiling_transform,
-		Uniforms {
-			model: ceiling_transform.compute_matrix(),
-			..Default::default()
-		},
-	))
-	.insert_bundle(wall_floor_common_components);
+	cmd.spawn()
+		.insert(ceiling_transform)
+		.insert_bundle(wall_floor_common_components);
 
 	chunk
 }
