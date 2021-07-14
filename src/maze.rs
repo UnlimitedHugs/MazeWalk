@@ -4,7 +4,7 @@ use super::{
 	maze_gen::{self, GridDirection, GridMaze, GridNode},
 	rendering::*,
 	utils::Color,
-	utils::Cube,
+	utils::{Cube, Plane},
 };
 use bevy::{
 	input::mouse::MouseMotion,
@@ -12,7 +12,7 @@ use bevy::{
 	prelude::*,
 };
 use easer::functions::{Easing, Quad};
-use miniquad::{Comparison, CullFace, PipelineParams};
+use miniquad::{Comparison, CullFace, FilterMode, PipelineParams, TextureWrap};
 use rand::{seq::IteratorRandom, seq::SliceRandom, thread_rng, Rng};
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemLabel)]
@@ -63,6 +63,7 @@ struct MazeAssets {
 	wall_colors: Vec<Color>,
 	wall_tex_diffuse: Handle<Texture>,
 	wall_tex_normal: Handle<Texture>,
+	surface_mesh: Handle<Mesh>,
 }
 
 fn spawn_initial_chunk(
@@ -70,6 +71,7 @@ fn spawn_initial_chunk(
 	asset_server: Res<AssetServer>,
 	mut meshes: ResMut<Assets<Mesh>>,
 	mut shaders: ResMut<Assets<Shader>>,
+	mut texture_settings: ResMut<TextureLoadSettings>,
 ) {
 	let maze_assets = {
 		let mut rng = thread_rng();
@@ -97,12 +99,24 @@ fn spawn_initial_chunk(
 			colors
 		};
 
+		let floor_mesh = meshes.add(Plane::new(CHUNK_SIZE as f32, CHUNK_SIZE as f32).into());
+
+		let tex_properties = TextureProperties {
+			wrap: TextureWrap::Repeat,
+			filter: FilterMode::Nearest,
+		};
+		let wall_tex_diffuse = asset_server.load("wall_diffuse.png");
+		texture_settings.add(wall_tex_diffuse.clone(), tex_properties);
+		let wall_tex_normal = asset_server.load("wall_normal.png");
+		texture_settings.add(wall_tex_normal.clone(), tex_properties);
+
 		MazeAssets {
 			cube_mesh,
 			shader,
 			wall_colors,
-			wall_tex_diffuse: asset_server.load("wall_diffuse.png"),
-			wall_tex_normal: asset_server.load("wall_normal.png"),
+			wall_tex_diffuse,
+			wall_tex_normal,
+			surface_mesh: floor_mesh,
 		}
 	};
 
@@ -299,6 +313,7 @@ fn update_uniforms(
 }
 
 #[repr(C)]
+#[derive(Clone)]
 struct Uniforms {
 	model: Mat4,
 	view: Mat4,
@@ -741,6 +756,45 @@ fn generate_chunk(
 			));
 		}
 	}
+
+	let wall_floor_common_components = (
+		assets.surface_mesh.clone(),
+		assets.shader.clone(),
+		TextureBindings(vec![
+			assets.wall_tex_diffuse.clone(),
+			assets.wall_tex_normal.clone(),
+		]),
+		Parent(chunk_entity),
+	);
+
+	let chunk_center = {
+		let center_offset = CHUNK_SIZE as f32 / 2. - CELL_SIZE / 2.;
+		coords.to_world_pos() + vec3(center_offset, 0., center_offset)
+	};
+	let floor_transform =
+		GlobalTransform::from_translation(chunk_center + vec3(0., -CELL_SIZE / 2., 0.));
+	cmd.spawn_bundle((
+		floor_transform,
+		Uniforms {
+			model: floor_transform.compute_matrix(),
+			..Default::default()
+		},
+	))
+	.insert_bundle(wall_floor_common_components.clone());
+
+	let ceiling_transform = GlobalTransform::from_matrix(
+		Mat4::from_translation(chunk_center + vec3(0., CELL_SIZE / 2., 0.))
+			* Mat4::from_rotation_z(PI),
+	);
+	cmd.spawn_bundle((
+		ceiling_transform,
+		Uniforms {
+			model: ceiling_transform.compute_matrix(),
+			..Default::default()
+		},
+	))
+	.insert_bundle(wall_floor_common_components);
+
 	chunk
 }
 

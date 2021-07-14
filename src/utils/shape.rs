@@ -169,24 +169,35 @@ impl From<Quad> for Mesh {
 pub struct Plane {
 	/// The total side length of the square.
 	pub size: f32,
+	pub tiling: f32,
+}
+
+impl Plane {
+	pub fn new(size: f32, tiling: f32) -> Self {
+		Self { size, tiling }
+	}
 }
 
 impl Default for Plane {
 	fn default() -> Self {
-		Plane { size: 1.0 }
+		Plane {
+			size: 1.0,
+			tiling: 1.0,
+		}
 	}
 }
 
 impl From<Plane> for Mesh {
 	fn from(plane: Plane) -> Self {
-		let extent = plane.size / 2.0;
+		let Plane { size, tiling } = plane;
+		let extent = size / 2.0;
 
 		#[rustfmt::skip]
 		let vertex_data = [
-			(vec3(extent,  0.0, -extent), vec3(0.0, 1.0, 0.0), vec2(1.0, 1.0)),
-			(vec3(extent,  0.0,  extent), vec3(0.0, 1.0, 0.0), vec2(1.0, 0.0)),
+			(vec3(extent,  0.0, -extent), vec3(0.0, 1.0, 0.0), vec2(tiling, tiling)),
+			(vec3(extent,  0.0,  extent), vec3(0.0, 1.0, 0.0), vec2(tiling, 0.0)),
 			(vec3(-extent, 0.0,  extent), vec3(0.0, 1.0, 0.0), vec2(0.0, 0.0)),
-			(vec3(-extent, 0.0, -extent), vec3(0.0, 1.0, 0.0), vec2(0.0, 1.0)),
+			(vec3(-extent, 0.0, -extent), vec3(0.0, 1.0, 0.0), vec2(0.0, tiling)),
 		];
 
 		let indices: Vec<u16> = vec![0, 2, 1, 0, 3, 2];
