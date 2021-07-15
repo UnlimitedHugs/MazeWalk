@@ -1,7 +1,7 @@
 use super::draw::ContextResources;
 use anyhow::anyhow;
 use bevy::{
-	asset::{AssetLoader, BoxedFuture, LoadContext, LoadedAsset},
+	asset::{AssetLoader, BoxedFuture, HandleId, LoadContext, LoadedAsset},
 	prelude::*,
 	reflect::TypeUuid,
 	utils::HashMap,
@@ -24,12 +24,12 @@ pub struct TextureBindings(pub Vec<Handle<Texture>>);
 
 #[derive(Default)]
 pub struct TextureLoadSettings {
-	per_asset: HashMap<Handle<Texture>, TextureProperties>,
+	per_asset: HashMap<HandleId, TextureProperties>,
 	defaults: TextureProperties,
 }
 impl TextureLoadSettings {
-	// pub fn add(&mut self, for_tex: Handle<Texture>, props: TextureProperties) {
-	// 	self.per_asset.insert(for_tex, props);
+	// pub fn add(&mut self, for_tex: &Handle<Texture>, props: TextureProperties) {
+	// 	self.per_asset.insert(for_tex.id, props);
 	// }
 	pub fn set_defaults(&mut self, props: TextureProperties) {
 		self.defaults = props;
@@ -55,15 +55,15 @@ pub fn upload_textures(
 	mut texture_events: EventReader<AssetEvent<Texture>>,
 	mut context: ResMut<Context>,
 	mut context_resources: ResMut<ContextResources>,
-	mut load_settings: ResMut<TextureLoadSettings>,
+	load_settings: Res<TextureLoadSettings>,
 ) {
 	for evt in texture_events.iter() {
 		if let AssetEvent::Created { handle } = evt {
 			if let Some(tex) = textures.get(handle) {
-				let settings = load_settings
+				let TextureProperties { wrap, filter } = load_settings
 					.per_asset
-					.remove(handle)
-					.unwrap_or_else(|| load_settings.defaults);
+					.get(&handle.id)
+					.unwrap_or_else(|| &load_settings.defaults);
 				let overwritten = context_resources
 					.textures
 					.insert(
@@ -75,8 +75,8 @@ pub fn upload_textures(
 								format: tex.format,
 								width: tex.width,
 								height: tex.height,
-								wrap: settings.wrap,
-								filter: settings.filter,
+								wrap: *wrap,
+								filter: *filter,
 							},
 						),
 					)
