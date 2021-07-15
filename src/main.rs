@@ -1,5 +1,3 @@
-mod cubes_demo;
-mod quads_demo;
 mod rendering;
 mod utils;
 mod maze;
@@ -18,8 +16,6 @@ pub fn main() {
 		.add_plugins(DefaultPlugins)
 		.add_plugin(MiniquadPlugin)
 		.add_plugin(RenderingPlugin)
-		//.add_plugin(quads_demo::QuadsDemoPlugin)
-		//.add_plugin(cubes_demo::CubesDemoPlugin)
 		.add_plugin(maze::MazePlugin)
 		.add_system_to_stage(CoreStage::Last, quit_on_esc.system())
 		.run();
