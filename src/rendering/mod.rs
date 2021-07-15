@@ -10,7 +10,7 @@ use bevy_miniquad::Context;
 pub use camera::{Camera, CameraBundle, ProjectionMatrix, ViewMatrix};
 pub use mesh::{Mesh, Vertex};
 use miniquad::PipelineParams;
-pub use shader::{Shader, ShaderMetadata};
+pub use shader::{Shader, ShaderMetaStore};
 pub use texture::{Texture, TextureBindings, TextureLoadSettings, TextureProperties};
 
 use bevy::{asset::AssetStage, ecs::component::Component, prelude::*};
@@ -47,6 +47,8 @@ impl Plugin for RenderingPlugin {
 		.init_resource::<draw::ContextResources>()
 		.init_resource::<texture::TextureLoadSettings>()
 		.init_asset_loader::<texture::PngTextureLoader>()
+		.init_resource::<shader::ShaderMetaStore>()
+		.init_asset_loader::<shader::ShaderLoader>()
 		.add_system(capture_mouse.system())
 		.add_system_set_to_stage(
 			RenderStage::RenderResource,

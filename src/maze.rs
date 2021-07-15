@@ -12,7 +12,7 @@ use bevy::{
 	prelude::*,
 };
 use easer::functions::{Easing, Quad};
-use miniquad::{Comparison, CullFace, FilterMode, PipelineParams, TextureWrap};
+use miniquad::{Comparison, CullFace, FilterMode, PipelineParams, TextureWrap, UniformType};
 use rand::{seq::IteratorRandom, seq::SliceRandom, thread_rng, Rng};
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemLabel)]
@@ -79,18 +79,29 @@ fn spawn_initial_chunk(
 	mut cmd: Commands,
 	asset_server: Res<AssetServer>,
 	mut meshes: ResMut<Assets<Mesh>>,
-	mut shaders: ResMut<Assets<Shader>>,
 	mut texture_settings: ResMut<TextureLoadSettings>,
+	mut shader_meta: ResMut<ShaderMetaStore>,
 ) {
+	#[cfg(debug_assertions)]
+	asset_server.watch_for_changes().unwrap();
+
 	let maze_assets = {
 		let mut rng = thread_rng();
 		let cube_mesh = meshes.add(Cube::new(CELL_SIZE).into());
-		let shader = shaders.add(Shader::new(
-			shader::VERTEX,
-			shader::FRAGMENT,
-			&shader::TEXTURES,
-			&shader::UNIFORMS,
-		));
+		let shader = asset_server.load("shader.glsl");
+		#[rustfmt::skip]
+		shader_meta.set(&shader,
+			&["diffuse_tex", "normal_tex"],
+			&[
+				("model",        UniformType::Mat4),
+				("view",         UniformType::Mat4),
+				("projection",   UniformType::Mat4),
+				("light_pos",    UniformType::Float3),
+				("view_pos",     UniformType::Float3),
+				("light_color",  UniformType::Float3),
+				("object_color", UniformType::Float3),
+			],
+		);
 
 		let wall_colors = {
 			let num_samples = 8;
@@ -793,26 +804,26 @@ fn generate_chunk(
 	let floor_transform =
 		GlobalTransform::from_translation(chunk_center + vec3(0., -CELL_SIZE / 2., 0.));
 	cmd.spawn_bundle((
-			floor_transform,
-			TextureBindings(vec![
-				assets.floor_tex_diffuse.clone(),
-				assets.floor_tex_normal.clone(),
-			]),
-		))
-		.insert_bundle(wall_floor_common_components.clone());
+		floor_transform,
+		TextureBindings(vec![
+			assets.floor_tex_diffuse.clone(),
+			assets.floor_tex_normal.clone(),
+		]),
+	))
+	.insert_bundle(wall_floor_common_components.clone());
 
 	let ceiling_transform = GlobalTransform::from_matrix(
 		Mat4::from_translation(chunk_center + vec3(0., CELL_SIZE / 2., 0.))
 			* Mat4::from_rotation_z(PI),
 	);
 	cmd.spawn_bundle((
-			ceiling_transform,
-			TextureBindings(vec![
-				assets.ceiling_tex_diffuse.clone(),
-				assets.ceiling_tex_normal.clone(),
-			]),
-		))
-		.insert_bundle(wall_floor_common_components);
+		ceiling_transform,
+		TextureBindings(vec![
+			assets.ceiling_tex_diffuse.clone(),
+			assets.ceiling_tex_normal.clone(),
+		]),
+	))
+	.insert_bundle(wall_floor_common_components);
 
 	chunk
 }
@@ -894,100 +905,6 @@ impl TupleVecConversion for (i32, i32) {
 	fn to_vec3(self) -> Vec3 {
 		Vec3::new(self.0 as f32, 0., self.1 as f32)
 	}
-}
-
-mod shader {
-	use miniquad::UniformType;
-
-	pub const VERTEX: &str = r#"#version 330 core
-	in vec3 pos;
-	in vec3 normal;
-	in vec2 uv;
-
-	out vec3 FragPos;
-	out vec3 Normal;
-	out vec2 TexCoords;
-
-	uniform mat4 model;
-	uniform mat4 view;
-	uniform mat4 projection;
-
-	void main() {
-		FragPos = vec3(model * vec4(pos, 1.0));
-		Normal = mat3(transpose(inverse(model))) * normal;
-		TexCoords = uv;
-
-		gl_Position = projection * view * vec4(FragPos, 1.0);
-	}
-	"#;
-
-	pub const FRAGMENT: &str = r#"#version 330 core
-	out vec4 FragColor;
-
-	in vec3 Normal;
-	in vec3 FragPos;
-	in vec2 TexCoords;
-
-	uniform vec3 light_pos;
-	uniform vec3 view_pos;
-	uniform vec3 light_color;
-	uniform vec3 object_color;
-	uniform sampler2D diffuse_tex;
-	uniform sampler2D normal_tex;
-
-	vec3 ambient_color = vec3(1.0) * 0.2;
-	vec3 normal_map_flat_color = vec3(0.5, 0.5, 1.0);
-	float normal_map_intensity = 0.15;
-
-	mat3 cotangent_frame(vec3 normal, vec3 pos, vec2 uv) {
-		vec3 dp1 = dFdx(pos);
-		vec3 dp2 = dFdy(pos);
-		vec2 duv1 = dFdx(uv);
-		vec2 duv2 = dFdy(uv);
-
-		vec3 dp2perp = cross(dp2, normal);
-		vec3 dp1perp = cross(normal, dp1);
-		vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
-		vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
-
-		float invmax = inversesqrt(max(dot(T, T), dot(B, B)));
-		return mat3(T * invmax, B * invmax, normal);
-	}
-
-	void main() {
-		// normal
-		vec3 normal_sample = texture(normal_tex, TexCoords).rgb;
-		normal_sample = mix(normal_map_flat_color, normal_sample, normal_map_intensity);
-		mat3 tbn = cotangent_frame(Normal, FragPos, TexCoords);
-		vec3 norm = normalize(tbn * (normal_sample * 2.0 - 1.0));
-		
-		// diffuse 
-		vec3 light_dir = normalize(light_pos - FragPos);
-		float diff = max(dot(norm, light_dir), 0.0);
-		vec3 diffuse = diff * light_color * texture(diffuse_tex, TexCoords).rgb;
-
-		// specular
-		float specular_strength = 0.5;
-		vec3 view_dir = normalize(view_pos - FragPos);
-		vec3 reflect_dir = reflect(-light_dir, norm);  
-		float spec = pow(max(dot(view_dir, reflect_dir), 0.0), 32);
-		vec3 specular = specular_strength * spec * light_color;  
-			
-		vec3 result = (ambient_color + diffuse + specular) * object_color;
-		FragColor = vec4(result, 1.0);
-	}
-	"#;
-
-	pub const TEXTURES: [&str; 2] = ["diffuse_tex", "normal_tex"];
-	pub const UNIFORMS: [(&str, UniformType); 7] = [
-		("model", UniformType::Mat4),
-		("view", UniformType::Mat4),
-		("projection", UniformType::Mat4),
-		("light_pos", UniformType::Float3),
-		("view_pos", UniformType::Float3),
-		("light_color", UniformType::Float3),
-		("object_color", UniformType::Float3),
-	];
 }
 
 #[cfg(test)]
