@@ -17,7 +17,7 @@ use rand::{seq::IteratorRandom, seq::SliceRandom, thread_rng, Rng};
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemLabel)]
 enum SystemLabels {
-	CameraLookInput,
+	ApplyEulerRotation,
 	PlayerMovement,
 }
 
@@ -40,15 +40,15 @@ impl Plugin for MazePlugin {
 		.init_resource::<CurrentChunk>()
 		.init_resource::<AutoWalkState>()
 		.add_startup_system(spawn_initial_chunk.system())
-		.add_system(camera_look_input.system().label(CameraLookInput))
-		.add_system(expand_euler_rotation.system().after(CameraLookInput))
+		.add_system(auto_walk.system().before(ApplyEulerRotation))
+		.add_system(camera_look_input.system().before(ApplyEulerRotation))
+		.add_system(apply_euler_rotation.system().label(ApplyEulerRotation))
 		.add_system(player_movement.system().label(PlayerMovement))
 		.add_system(collide_with_walls.system().after(PlayerMovement))
 		.add_system(track_current_chunk.system().after(PlayerMovement))
 		.add_system(update_hover_mode.system())
 		.add_system(spawn_additional_chunk.system())
 		.add_system(despawn_traversed_chunks.system())
-		.add_system(auto_walk.system())
 		.add_system_set_to_stage(
 			RenderStage::PreRender,
 			SystemSet::new()
@@ -226,7 +226,11 @@ struct RotationEuler {
 fn camera_look_input(
 	mut q: Query<&mut RotationEuler, With<Camera>>,
 	mut mouse_motion: EventReader<MouseMotion>,
+	auto_walk: Res<AutoWalkState>,
 ) {
+	if !auto_walk.disabled {
+		return;
+	}
 	let mut euler = q.single_mut().unwrap();
 	let mouse_sensitivity = 0.006f32;
 	let pitch_limit = 90.0f32.to_radians() * 0.99;
@@ -236,14 +240,9 @@ fn camera_look_input(
 	}
 }
 
-fn expand_euler_rotation(
+fn apply_euler_rotation(
 	mut q: Query<(&mut GlobalTransform, &RotationEuler), Changed<RotationEuler>>,
-	auto_walk: Res<AutoWalkState>,
 ) {
-	// separate system to handle startup value
-	if !auto_walk.disabled {
-		return;
-	}
 	for (mut tx, RotationEuler { yaw, pitch }) in q.iter_mut() {
 		tx.rotation = Quat::from_rotation_ypr(*yaw, *pitch, 0.);
 	}
@@ -535,22 +534,22 @@ fn despawn_traversed_chunks(
 struct AutoWalkState {
 	translation_from: Vec3,
 	translation_to: Vec3,
-	rotation_from: Quat,
-	rotation_to: Quat,
+	rotation_from: f32,
+	rotation_to: f32,
 	tween_progress: Option<f32>,
 	heading: Option<GridDirection>,
 	disabled: bool,
 }
 
 fn auto_walk(
-	mut q_cam: Query<(&mut GlobalTransform, &RotationEuler), With<Camera>>,
+	mut q_cam: Query<(&mut GlobalTransform, &mut RotationEuler), With<Camera>>,
 	q_chunks: Query<(Entity, &Chunk)>,
 	current_chunk_res: Res<CurrentChunk>,
 	mut state: ResMut<AutoWalkState>,
 	time: Res<Time>,
 	input: Res<Input<KeyCode>>,
 ) {
-	let (mut cam_transform, cam_euler) = q_cam.single_mut().expect("get camera position");
+	let (mut cam_transform, mut cam_euler) = q_cam.single_mut().expect("get camera position");
 	if input.just_pressed(KeyCode::X) {
 		state.disabled = !state.disabled;
 		state.heading = None;
@@ -565,7 +564,8 @@ fn auto_walk(
 		t = (t + delta).min(1.0);
 		cam_transform.translation = state.translation_from.lerp(state.translation_to, t);
 		let rotation_t = Quad::ease_in_out((t * 2.).min(1.0), 0., 1., 1.);
-		cam_transform.rotation = state.rotation_from.slerp(state.rotation_to, rotation_t);
+		cam_euler.yaw = lerp_angle(state.rotation_from, state.rotation_to, rotation_t);
+		cam_euler.pitch = 0.;
 		state.tween_progress = (t < 1.0).then(|| t);
 	}
 	if state.tween_progress.is_none() && !state.disabled {
@@ -644,17 +644,10 @@ fn auto_walk(
 					state.heading = Some(direction);
 					state.translation_from = cam_transform.translation;
 					state.translation_to = neighbor_node_position;
-					state.rotation_from = cam_transform.rotation;
-					state.rotation_to = direction.to_rotation();
-
-					let rotation_dot = state.rotation_from.dot(state.rotation_to);
-					if rotation_dot.abs() < 0.001 {
-						// always turn left when reversing
-						state.rotation_to = state.rotation_from * Quat::from_rotation_y(PI);
-					} else if rotation_dot < 0. {
-						// turn left or right, whichever is closest
-						state.rotation_from = -state.rotation_from;
-					}
+					let always_turn_left_when_reversing_bias = 0.001;
+					state.rotation_from = cam_euler.yaw + always_turn_left_when_reversing_bias;
+					state.rotation_to = direction.get_offset().to_vec2().angle_between(-Vec2::Y);
+					dbg!((state.rotation_from, state.rotation_to));
 					state.tween_progress = Some(0.);
 				}
 			}
@@ -885,6 +878,13 @@ fn grid_to_maze((x, z): (i32, i32)) -> (i32, i32) {
 
 fn node_to_world(n: &GridNode, c: &Chunk) -> Vec3 {
 	maze_to_grid(c.maze.idx_to_pos(n.idx())).to_vec3() + c.coords.to_world_pos()
+}
+
+fn lerp_angle(p_from: f32, p_to: f32, t: f32) -> f32 {
+	const TAU:f32 = PI * 2.;
+	let difference = (p_to - p_from) % TAU;
+	let distance = ((2.0 * difference) % TAU) - difference;
+	return p_from + distance * t;
 }
 
 impl GridDirection {
