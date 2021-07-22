@@ -1,5 +1,5 @@
 use super::{GridMaze, GridNode};
-use rand::{thread_rng, seq::SliceRandom};
+use rand::{Rng, seq::SliceRandom};
 
 /// Generates a random maze using Wilson's algorithm:
 /// Like Aldous-Broder, this algorithm depends on the idea of a random walk, but with a twist.
@@ -12,11 +12,11 @@ use rand::{thread_rng, seq::SliceRandom};
 ///    reach a visited node.
 /// 3. link all the nodes in the current random walk to the visited node
 /// 4. repeat step 2 until all nodes in the maze have been visited
-pub fn generate(height: usize, width: usize) -> GridMaze {
+pub fn generate(height: usize, width: usize, rng: &mut impl Rng) -> GridMaze {
     let mut maze = GridMaze::new(height, width);
 
     // choose a random node in the maze, this will be the first visited node
-    let first = maze.random_node();
+    let first = maze.random_node(rng);
     // initialize unvisited to contain all positions in the maze except for first
     let mut unvisited_nodes: Vec<GridNode> = maze
         .iter_nodes()
@@ -27,7 +27,7 @@ pub fn generate(height: usize, width: usize) -> GridMaze {
     // repeat until all nodes have been visited
     while !unvisited_nodes.is_empty() {
         // choose a random, unvisited node and add it to the `path` that is about to be walked
-        let mut cur_node = *unvisited_nodes.choose(&mut thread_rng()).unwrap();
+        let mut cur_node = *unvisited_nodes.choose(rng).unwrap();
         // path contains the randomly walked nodes
         let mut path: Vec<GridNode> = vec![cur_node];
 
@@ -36,7 +36,7 @@ pub fn generate(height: usize, width: usize) -> GridMaze {
             // choose a random neighbor of the current node
             cur_node = *maze
                 .neighbors(&cur_node)
-                .choose(&mut thread_rng())
+                .choose(rng)
                 .expect("all nodes will have at least two neighbors");
 
             // if the random neighbor is already in path, there is a loop, so remove it

@@ -1,6 +1,5 @@
 use super::{distances::Distances, GridNode};
-use rand::seq::SliceRandom;
-use rand::{thread_rng, Rng};
+use rand::{Rng, seq::SliceRandom};
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::ops::Index;
@@ -145,8 +144,8 @@ impl GridMaze {
 	}
 
 	/// returns a copy of a random node in the maze
-	pub fn random_node(&self) -> GridNode {
-		let rand_idx = thread_rng().gen_range(0..self.nodes.len());
+	pub fn random_node(&self, rng: &mut impl Rng) -> GridNode {
+		let rand_idx = rng.gen_range(0..self.nodes.len());
 		self.nodes[rand_idx]
 	}
 
@@ -283,15 +282,15 @@ impl GridMaze {
 	///
 	/// `p` - is a value between 0.0 and 1.0 and is the percentage amount of dead-ends to remove.
 	///       1.0 = remove all dead-ends, while a value of 0.5 would remove 50 percent of dead-ends
-	pub fn braid(&mut self, p: f64) {
+	pub fn braid(&mut self, p: f64, rng: &mut impl Rng) {
 		// dead_ends is all the nodes in the Graph that are dead ends
 		let mut dead_ends = self.dead_ends();
-		dead_ends.shuffle(&mut thread_rng());
+		dead_ends.shuffle(rng);
 
 		for node in dead_ends {
 			// make sure the position is still a dead-end, as it may have been changed in a
 			// previous iteration of the loop
-			if self.get_links(&node).len() != 1 || !thread_rng().gen_bool(p) {
+			if self.get_links(&node).len() != 1 || !rng.gen_bool(p) {
 				continue;
 			} else {
 				// now get neighbor nodes of `node` that are not linked to it
@@ -314,7 +313,7 @@ impl GridMaze {
 				}
 
 				// finally choose a random, best, neighbor and link to it
-				if let Some(rand_neighbor) = best_neighbors.choose(&mut thread_rng()) {
+				if let Some(rand_neighbor) = best_neighbors.choose(rng) {
 					self.link(&node, rand_neighbor, true);
 				}
 			}

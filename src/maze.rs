@@ -13,7 +13,7 @@ use bevy::{
 };
 use easer::functions::{Easing, Quad};
 use miniquad::{Comparison, CullFace, FilterMode, PipelineParams, TextureWrap, UniformType};
-use rand::{seq::IteratorRandom, seq::SliceRandom, thread_rng, Rng};
+use rand::{prelude::*, rngs::StdRng};
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemLabel)]
 enum SystemLabels {
@@ -76,6 +76,7 @@ struct MazeAssets {
 	floor_tex_normal: Handle<Texture>,
 	ceiling_tex_diffuse: Handle<Texture>,
 	ceiling_tex_normal: Handle<Texture>,
+	rng: StdRng,
 }
 
 fn spawn_initial_chunk(
@@ -88,8 +89,8 @@ fn spawn_initial_chunk(
 	#[cfg(debug_assertions)]
 	asset_server.watch_for_changes().unwrap();
 
-	let maze_assets = {
-		let mut rng = thread_rng();
+	let mut assets = {
+		let mut rng = StdRng::seed_from_u64(0);
 		let cube_mesh = meshes.add(Cube::new(CELL_SIZE).into());
 		let shader = asset_server.load("shader.glsl");
 		#[rustfmt::skip]
@@ -146,11 +147,11 @@ fn spawn_initial_chunk(
 			floor_tex_normal,
 			ceiling_tex_diffuse,
 			ceiling_tex_normal,
+			rng,
 		}
 	};
 
-	let first_chunk = generate_chunk(&mut cmd, &maze_assets, 0, ChunkCoords::ZERO, None);
-	cmd.insert_resource(maze_assets);
+	let first_chunk = generate_chunk(&mut cmd, &mut assets, 0, ChunkCoords::ZERO, None);
 
 	let camera_transform = {
 		let (entrance_x, entrance_z) =
@@ -159,7 +160,7 @@ fn spawn_initial_chunk(
 			.maze
 			.get_links(&first_chunk.maze[first_chunk.entrance.node])
 			.into_iter()
-			.choose(&mut thread_rng())
+			.choose(&mut assets.rng)
 			.expect("entrance neighbor");
 		let (neighbor_x, neighbor_z) =
 			maze_to_grid(first_chunk.maze.idx_to_pos(random_entrance_neighbor.idx()));
@@ -179,6 +180,8 @@ fn spawn_initial_chunk(
 		yaw: camera_transform.rotation.to_axis_angle().1,
 		pitch: 0.,
 	});
+
+	cmd.insert_resource(assets);
 }
 
 struct Wall;
@@ -496,7 +499,7 @@ fn track_current_chunk(
 
 fn spawn_additional_chunk(
 	mut cmd: Commands,
-	assets: Res<MazeAssets>,
+	mut assets: ResMut<MazeAssets>,
 	q: Query<(Entity, &Chunk)>,
 	mut entered_event: EventReader<ChunkEntered>,
 ) {
@@ -538,7 +541,7 @@ fn spawn_additional_chunk(
 
 		generate_chunk(
 			&mut cmd,
-			&assets,
+			&mut assets,
 			last_chunk_data.index + 1,
 			next_chunk_coords,
 			Some(next_chunk_entrance),
@@ -693,14 +696,13 @@ fn auto_walk(
 
 fn generate_chunk(
 	cmd: &mut Commands,
-	assets: &MazeAssets,
+	assets: &mut MazeAssets,
 	index: usize,
 	coords: ChunkCoords,
 	known_entrance: Option<SidedNode>,
 ) -> Chunk {
-	let mut rng = thread_rng();
 	const MAZE_SIZE: usize = (CHUNK_SIZE as usize - 1) / 2;
-	let maze = maze_gen::generate(MAZE_SIZE, MAZE_SIZE);
+	let maze = maze_gen::generate(MAZE_SIZE, MAZE_SIZE, &mut assets.rng);
 	let mut grid = {
 		let mut grid = [[true; CHUNK_SIZE as usize]; CHUNK_SIZE as usize];
 		for (maze_z, row) in maze.iter_rows().enumerate() {
@@ -721,11 +723,11 @@ fn generate_chunk(
 	let make_entrance_passage = known_entrance.is_some();
 	let (entrance, exit) = {
 		let entrance = known_entrance.unwrap_or_else(|| {
-			let side = GridDirection::ALL[rng.gen_range(0..4)];
+			let side = GridDirection::ALL[assets.rng.gen_range(0..4)];
 			SidedNode {
 				node: maze
 					.get_edge_nodes(side)
-					.choose(&mut rng)
+					.choose(&mut assets.rng)
 					.expect("select entrance node")
 					.idx(),
 				side,
