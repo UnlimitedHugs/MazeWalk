@@ -34,9 +34,11 @@ impl Plugin for MazePlugin {
 			},
 			capture_mouse: true,
 		})
+		.insert_resource(ControlMode::AutoWalk)
 		.register_shader_uniforms::<Uniforms>()
 		.add_event::<ChunkEntered>()
 		.add_event::<ChunkExited>()
+		.add_event::<ControlModeChanged>()
 		.init_resource::<CurrentChunk>()
 		.init_resource::<AutoWalkState>()
 		.add_startup_system(spawn_initial_chunk.system())
@@ -49,6 +51,7 @@ impl Plugin for MazePlugin {
 		.add_system(update_hover_mode.system())
 		.add_system(spawn_additional_chunk.system())
 		.add_system(despawn_traversed_chunks.system())
+		.add_system(read_control_mode_input.system())
 		.add_system_set_to_stage(
 			RenderStage::PreRender,
 			SystemSet::new()
@@ -226,9 +229,9 @@ struct RotationEuler {
 fn camera_look_input(
 	mut q: Query<&mut RotationEuler, With<Camera>>,
 	mut mouse_motion: EventReader<MouseMotion>,
-	auto_walk: Res<AutoWalkState>,
+	control_mode: Res<ControlMode>,
 ) {
-	if !auto_walk.disabled {
+	if *control_mode != ControlMode::Manual && *control_mode != ControlMode::Hover {
 		return;
 	}
 	let mut euler = q.single_mut().unwrap();
@@ -373,22 +376,51 @@ impl Default for Uniforms {
 
 fn update_hover_mode(
 	mut cmd: Commands,
-	mut q: Query<(Entity, &mut GlobalTransform, Option<&NoClip>), With<Camera>>,
-	input: Res<Input<KeyCode>>,
+	mut q: Query<(Entity, &mut GlobalTransform), With<Camera>>,
+	mut mode_changed: EventReader<ControlModeChanged>,
 ) {
-	let (cam_entity, mut cam_transform, cam_noclip) = q.single_mut().unwrap();
-	if input.just_pressed(KeyCode::Space) {
-		if cam_noclip.is_some() {
-			cmd.entity(cam_entity).remove::<NoClip>();
-			cam_transform.translation.y = 0.;
-		} else {
+	let (cam_entity, mut cam_transform) = q.single_mut().unwrap();
+	for changed in mode_changed.iter() {
+		if changed.0 == ControlMode::Hover {
 			cmd.entity(cam_entity).insert(NoClip);
 			cam_transform.translation.y = 4.;
+		} else {
+			cmd.entity(cam_entity).remove::<NoClip>();
+			cam_transform.translation.y = 0.;
 		}
 	}
 }
 
 struct NoClip;
+
+fn read_control_mode_input(
+	mut current: ResMut<ControlMode>,
+	input: Res<Input<KeyCode>>,
+	mut changed: EventWriter<ControlModeChanged>,
+) {
+	let pressed_state = input.get_just_pressed().next().and_then(|key| match key {
+		KeyCode::Space => Some(ControlMode::AutoWalk),
+		KeyCode::X => Some(ControlMode::Hover),
+		_ => None,
+	});
+
+	if let Some(mut target_state) = pressed_state {
+		if target_state == *current {
+			target_state = ControlMode::Manual;
+		}
+		changed.send(ControlModeChanged(target_state));
+		*current = target_state;
+	}
+}
+
+#[derive(PartialEq, Eq, Copy, Clone)]
+enum ControlMode {
+	Manual,
+	Hover,
+	AutoWalk,
+}
+
+struct ControlModeChanged(ControlMode);
 
 #[derive(Clone, Copy, Debug)]
 enum CollisionEdge {
@@ -405,7 +437,6 @@ impl CollisionEdge {
 		CollisionEdge::PosZ,
 	];
 	fn get_angle(&self) -> f32 {
-		// z.atan2(x).
 		match self {
 			CollisionEdge::NegX => 0.,
 			CollisionEdge::PosX => PI,
@@ -538,7 +569,6 @@ struct AutoWalkState {
 	rotation_to: f32,
 	tween_progress: Option<f32>,
 	heading: Option<GridDirection>,
-	disabled: bool,
 }
 
 fn auto_walk(
@@ -547,108 +577,114 @@ fn auto_walk(
 	current_chunk_res: Res<CurrentChunk>,
 	mut state: ResMut<AutoWalkState>,
 	time: Res<Time>,
+	control_mode: Res<ControlMode>,
+	mut mode_changed: EventReader<ControlModeChanged>,
 	input: Res<Input<KeyCode>>,
 ) {
 	let (mut cam_transform, mut cam_euler) = q_cam.single_mut().expect("get camera position");
-	if input.just_pressed(KeyCode::X) {
-		state.disabled = !state.disabled;
-		state.heading = None;
+	for mode in mode_changed.iter() {
+		if mode.0 != ControlMode::AutoWalk {
+			state.heading = None;
+			state.tween_progress = None;
+		}
 	}
-	if let Some(mut t) = state.tween_progress {
-		let delta = time.delta_seconds()
-			* (if input.pressed(KeyCode::LShift) {
-				5.
-			} else {
-				1.
-			});
-		t = (t + delta).min(1.0);
-		cam_transform.translation = state.translation_from.lerp(state.translation_to, t);
-		let rotation_t = Quad::ease_in_out((t * 2.).min(1.0), 0., 1., 1.);
-		cam_euler.yaw = lerp_angle(state.rotation_from, state.rotation_to, rotation_t);
-		cam_euler.pitch = 0.;
-		state.tween_progress = (t < 1.0).then(|| t);
-	}
-	if state.tween_progress.is_none() && !state.disabled {
-		if let Some(current_chunk_ent) = current_chunk_res.0 {
-			let (_, current_chunk) = q_chunks
-				.get(current_chunk_ent)
-				.expect("resolve current chunk");
-			let cam_pos_relative_to_grid =
-				cam_transform.translation - current_chunk.coords.to_world_pos();
-			let cam_grid_pos = (
-				cam_pos_relative_to_grid.x.round() as i32,
-				cam_pos_relative_to_grid.z.round() as i32,
-			);
-			if let Some(node_near_camera) = current_chunk
-				.maze
-				.pos_to_idx(grid_to_maze(cam_grid_pos))
-				.map(|idx| current_chunk.maze[idx])
-			{
-				let maze = &current_chunk.maze;
-				let get_direction_from_camera = || {
-					let camera_yaw = Quat::from_rotation_y(cam_euler.yaw);
-					GridDirection::ALL
-						.iter()
-						.min_by_key(|d| {
-							d.to_rotation()
-								.angle_between(camera_yaw)
-								.to_degrees()
-								.round() as i32
-						})
-						.copied()
-						.unwrap()
-				};
-
-				let previous_heading = state.heading.unwrap_or_else(get_direction_from_camera);
-				let is_first_step = state.heading.is_none();
-
-				let heading = {
-					let get_linked_neighbor_position = |dir: GridDirection| {
-						if node_near_camera.idx() == current_chunk.exit.node
-							&& dir == current_chunk.exit.side
-						{
-							// next chunk entrance
-							q_chunks
-								.iter()
-								.find(|(_, c)| c.index == current_chunk.index + 1)
-								.map(|(_, c)| node_to_world(&c.maze[c.entrance.node], &c))
-						} else if let (true, Some(neighbor_node)) = (
-							maze.has_link(&node_near_camera, dir),
-							maze.get_neighbor(&node_near_camera, dir),
-						) {
-							// node on current grid
-							Some(node_to_world(&neighbor_node, &current_chunk))
-						} else {
-							// grid edge or no node connection
-							None
-						}
+	if *control_mode == ControlMode::AutoWalk {
+		if let Some(mut t) = state.tween_progress {
+			let delta = time.delta_seconds()
+				* (if input.pressed(KeyCode::LShift) {
+					5.
+				} else {
+					1.
+				});
+			t = (t + delta).min(1.0);
+			cam_transform.translation = state.translation_from.lerp(state.translation_to, t);
+			let rotation_t = Quad::ease_in_out((t * 2.).min(1.0), 0., 1., 1.);
+			cam_euler.yaw = lerp_angle(state.rotation_from, state.rotation_to, rotation_t);
+			cam_euler.pitch = 0.;
+			state.tween_progress = (t < 1.0).then(|| t);
+		}
+		if state.tween_progress.is_none() {
+			if let Some(current_chunk_ent) = current_chunk_res.0 {
+				let (_, current_chunk) = q_chunks
+					.get(current_chunk_ent)
+					.expect("resolve current chunk");
+				let cam_pos_relative_to_grid =
+					cam_transform.translation - current_chunk.coords.to_world_pos();
+				let cam_grid_pos = (
+					cam_pos_relative_to_grid.x.round() as i32,
+					cam_pos_relative_to_grid.z.round() as i32,
+				);
+				if let Some(node_near_camera) = current_chunk
+					.maze
+					.pos_to_idx(grid_to_maze(cam_grid_pos))
+					.map(|idx| current_chunk.maze[idx])
+				{
+					let maze = &current_chunk.maze;
+					let get_direction_from_camera = || {
+						let camera_yaw = Quat::from_rotation_y(cam_euler.yaw);
+						GridDirection::ALL
+							.iter()
+							.min_by_key(|d| {
+								d.to_rotation()
+									.angle_between(camera_yaw)
+									.to_degrees()
+									.round() as i32
+							})
+							.copied()
+							.unwrap()
 					};
-					// test walkable directions
-					let mut valid_heading = None;
-					let mut current_dir = previous_heading;
-					if !is_first_step {
-						current_dir = current_dir.rotate_cw();
-					}
-					for _ in 0..4 {
-						if let Some(pos) = get_linked_neighbor_position(current_dir) {
-							valid_heading = Some((current_dir, pos));
-							break;
-						} else {
-							current_dir = current_dir.rotate_ccw();
-						}
-					}
-					valid_heading
-				};
 
-				if let Some((direction, neighbor_node_position)) = heading {
-					state.heading = Some(direction);
-					state.translation_from = cam_transform.translation;
-					state.translation_to = neighbor_node_position;
-					let always_turn_left_when_reversing_bias = 0.001;
-					state.rotation_from = cam_euler.yaw + always_turn_left_when_reversing_bias;
-					state.rotation_to = direction.get_offset().to_vec2().angle_between(-Vec2::Y);
-					dbg!((state.rotation_from, state.rotation_to));
-					state.tween_progress = Some(0.);
+					let previous_heading = state.heading.unwrap_or_else(get_direction_from_camera);
+					let is_first_step = state.heading.is_none();
+
+					let heading = {
+						let get_linked_neighbor_position = |dir: GridDirection| {
+							if node_near_camera.idx() == current_chunk.exit.node
+								&& dir == current_chunk.exit.side
+							{
+								// next chunk entrance
+								q_chunks
+									.iter()
+									.find(|(_, c)| c.index == current_chunk.index + 1)
+									.map(|(_, c)| node_to_world(&c.maze[c.entrance.node], &c))
+							} else if let (true, Some(neighbor_node)) = (
+								maze.has_link(&node_near_camera, dir),
+								maze.get_neighbor(&node_near_camera, dir),
+							) {
+								// node on current grid
+								Some(node_to_world(&neighbor_node, &current_chunk))
+							} else {
+								// grid edge or no node connection
+								None
+							}
+						};
+						// test walkable directions
+						let mut valid_heading = None;
+						let mut current_dir = previous_heading;
+						if !is_first_step {
+							current_dir = current_dir.rotate_cw();
+						}
+						for _ in 0..4 {
+							if let Some(pos) = get_linked_neighbor_position(current_dir) {
+								valid_heading = Some((current_dir, pos));
+								break;
+							} else {
+								current_dir = current_dir.rotate_ccw();
+							}
+						}
+						valid_heading
+					};
+
+					if let Some((direction, neighbor_node_position)) = heading {
+						state.heading = Some(direction);
+						state.translation_from = cam_transform.translation;
+						state.translation_to = neighbor_node_position;
+						let always_turn_left_when_reversing_bias = 0.001;
+						state.rotation_from = cam_euler.yaw + always_turn_left_when_reversing_bias;
+						state.rotation_to =
+							direction.get_offset().to_vec2().angle_between(-Vec2::Y);
+						state.tween_progress = Some(0.);
+					}
 				}
 			}
 		}
@@ -881,7 +917,7 @@ fn node_to_world(n: &GridNode, c: &Chunk) -> Vec3 {
 }
 
 fn lerp_angle(p_from: f32, p_to: f32, t: f32) -> f32 {
-	const TAU:f32 = PI * 2.;
+	const TAU: f32 = PI * 2.;
 	let difference = (p_to - p_from) % TAU;
 	let distance = ((2.0 * difference) % TAU) - difference;
 	return p_from + distance * t;
