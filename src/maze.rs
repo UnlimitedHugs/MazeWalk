@@ -7,6 +7,7 @@ use super::{
 	utils::{Cube, Plane},
 };
 use bevy::{
+	core::Stopwatch,
 	input::mouse::MouseMotion,
 	math::{vec2, vec3},
 	prelude::*,
@@ -15,8 +16,15 @@ use easer::functions::{Easing, Quad};
 use miniquad::{Comparison, CullFace, FilterMode, PipelineParams, TextureWrap, UniformType};
 use rand::{prelude::*, rngs::StdRng};
 
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
+enum GameState {
+	Preload,
+	Play,
+}
+
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemLabel)]
 enum SystemLabels {
+	InitPlayState,
 	ApplyEulerRotation,
 	PlayerMovement,
 }
@@ -25,6 +33,7 @@ pub struct MazePlugin;
 impl Plugin for MazePlugin {
 	fn build(&self, app: &mut AppBuilder) {
 		use SystemLabels::*;
+		#[rustfmt::skip]
 		app.insert_resource(RenderSettings {
 			pipeline: PipelineParams {
 				depth_test: Comparison::LessOrEqual,
@@ -34,24 +43,42 @@ impl Plugin for MazePlugin {
 			},
 			capture_mouse: true,
 		})
-		.insert_resource(ControlMode::AutoWalk)
 		.register_shader_uniforms::<Uniforms>()
 		.add_event::<ChunkEntered>()
 		.add_event::<ChunkExited>()
 		.add_event::<ControlModeChanged>()
-		.init_resource::<CurrentChunk>()
-		.init_resource::<AutoWalkState>()
-		.add_startup_system(spawn_initial_chunk.system())
-		.add_system(auto_walk.system().before(ApplyEulerRotation))
-		.add_system(camera_look_input.system().before(ApplyEulerRotation))
-		.add_system(apply_euler_rotation.system().label(ApplyEulerRotation))
-		.add_system(player_movement.system().label(PlayerMovement))
-		.add_system(collide_with_walls.system().after(PlayerMovement))
-		.add_system(track_current_chunk.system().after(PlayerMovement))
-		.add_system(update_hover_mode.system())
-		.add_system(spawn_additional_chunk.system())
-		.add_system(despawn_traversed_chunks.system())
-		.add_system(read_control_mode_input.system())
+		.add_startup_system(preload_assets.system())
+		.insert_resource(State::new(GameState::Preload))
+		.add_system_set_to_stage(CoreStage::PreUpdate, State::<GameState>::get_driver())
+		.add_system_set_to_stage(CoreStage::Update, State::<GameState>::get_driver())
+		.add_system_set_to_stage(
+			CoreStage::PreUpdate,
+			SystemSet::on_update(GameState::Preload)
+				.with_system(switch_to_play_state.system().before(InitPlayState))
+		)
+		.add_system_set_to_stage(
+			CoreStage::PreUpdate,
+			SystemSet::on_enter(GameState::Play)
+				.with_system(init_play_state.system().label(InitPlayState)),
+		)
+		.add_system_set(
+			SystemSet::on_update(GameState::Play)
+				.with_system(auto_walk.system().before(ApplyEulerRotation))
+				.with_system(camera_look_input.system().before(ApplyEulerRotation))
+				.with_system(apply_euler_rotation.system().label(ApplyEulerRotation))
+				.with_system(player_movement.system().label(PlayerMovement))
+				.with_system(collide_with_walls.system().after(PlayerMovement))
+				.with_system(track_current_chunk.system().after(PlayerMovement))
+				.with_system(update_hover_mode.system())
+				.with_system(spawn_additional_chunk.system())
+				.with_system(despawn_traversed_chunks.system())
+				.with_system(read_control_mode_input.system())
+				.with_system(read_restart_input.system())
+		)
+		.add_system_set(
+			SystemSet::on_exit(GameState::Play)
+				.with_system(reset_play_state.system()),
+		)
 		.add_system_set_to_stage(
 			RenderStage::PreRender,
 			SystemSet::new()
@@ -65,6 +92,87 @@ const PI: f32 = std::f32::consts::PI;
 const CELL_SIZE: f32 = 1.0;
 const CHUNK_SIZE: i32 = 17;
 
+fn preload_assets(
+	mut cmd: Commands,
+	asset_server: Res<AssetServer>,
+	mut meshes: ResMut<Assets<Mesh>>,
+	mut texture_settings: ResMut<TextureLoadSettings>,
+	mut shader_meta: ResMut<ShaderMetaStore>,
+) {
+	#[cfg(debug_assertions)]
+	asset_server.watch_for_changes().unwrap();
+
+	let mut rng = StdRng::from_entropy();
+	let cube_mesh = meshes.add(Cube::new(CELL_SIZE).into());
+	let shader = asset_server.load("shader.glsl");
+
+	#[rustfmt::skip]
+	shader_meta.set(&shader,
+		&["diffuse_tex", "normal_tex"],
+		&[
+			("model",        UniformType::Mat4),
+			("view",         UniformType::Mat4),
+			("projection",   UniformType::Mat4),
+			("light_pos",    UniformType::Float3),
+			("view_pos",     UniformType::Float3),
+			("light_color",  UniformType::Float3),
+			("object_color", UniformType::Float3),
+		],
+	);
+
+	let wall_colors = {
+		let num_samples = 8;
+		let hue_offset = rng.gen_range(0.0..360.0);
+		let mut colors = (0..num_samples)
+			.map(|i| {
+				Color::hsl(
+					(((360 / num_samples) * i) as f32 + hue_offset) % 360.,
+					0.4,
+					0.8,
+				)
+			})
+			.collect::<Vec<_>>();
+		colors.shuffle(&mut rng);
+		colors
+	};
+
+	let floor_mesh = meshes.add(Plane::new(CHUNK_SIZE as f32, CHUNK_SIZE as f32).into());
+
+	texture_settings.set_defaults(TextureProperties {
+		wrap: TextureWrap::Repeat,
+		filter: FilterMode::Nearest,
+	});
+	let wall_tex_diffuse = asset_server.load("wall_diffuse.png");
+	let wall_tex_normal = asset_server.load("wall_normal.png");
+	let floor_tex_diffuse = asset_server.load("tiles_diffuse.png");
+	let floor_tex_normal = asset_server.load("tiles_normal.png");
+	let ceiling_tex_diffuse = asset_server.load("concrete_diffuse.png");
+	let ceiling_tex_normal = asset_server.load("concrete_normal.png");
+
+	cmd.insert_resource(MazeAssets {
+		cube_mesh,
+		shader,
+		wall_colors,
+		wall_tex_diffuse,
+		wall_tex_normal,
+		surface_mesh: floor_mesh,
+		floor_tex_diffuse,
+		floor_tex_normal,
+		ceiling_tex_diffuse,
+		ceiling_tex_normal,
+	});
+}
+
+fn switch_to_play_state(
+	mut state: ResMut<State<GameState>>,
+	mut watch: Local<Stopwatch>,
+	time: Res<Time>,
+) {
+	if watch.tick(time.delta()).elapsed_secs() > 0.1 {
+		state.replace(GameState::Play).unwrap();
+	}
+}
+
 struct MazeAssets {
 	cube_mesh: Handle<Mesh>,
 	shader: Handle<Shader>,
@@ -76,82 +184,20 @@ struct MazeAssets {
 	floor_tex_normal: Handle<Texture>,
 	ceiling_tex_diffuse: Handle<Texture>,
 	ceiling_tex_normal: Handle<Texture>,
-	rng: StdRng,
 }
 
-fn spawn_initial_chunk(
-	mut cmd: Commands,
-	asset_server: Res<AssetServer>,
-	mut meshes: ResMut<Assets<Mesh>>,
-	mut texture_settings: ResMut<TextureLoadSettings>,
-	mut shader_meta: ResMut<ShaderMetaStore>,
-) {
-	#[cfg(debug_assertions)]
-	asset_server.watch_for_changes().unwrap();
+struct Random(StdRng);
 
-	let mut assets = {
-		let mut rng = StdRng::seed_from_u64(0);
-		let cube_mesh = meshes.add(Cube::new(CELL_SIZE).into());
-		let shader = asset_server.load("shader.glsl");
-		#[rustfmt::skip]
-		shader_meta.set(&shader,
-			&["diffuse_tex", "normal_tex"],
-			&[
-				("model",        UniformType::Mat4),
-				("view",         UniformType::Mat4),
-				("projection",   UniformType::Mat4),
-				("light_pos",    UniformType::Float3),
-				("view_pos",     UniformType::Float3),
-				("light_color",  UniformType::Float3),
-				("object_color", UniformType::Float3),
-			],
-		);
-
-		let wall_colors = {
-			let num_samples = 8;
-			let hue_offset = rng.gen_range(0.0..360.0);
-			let mut colors = (0..num_samples)
-				.map(|i| {
-					Color::hsl(
-						(((360 / num_samples) * i) as f32 + hue_offset) % 360.,
-						0.4,
-						0.8,
-					)
-				})
-				.collect::<Vec<_>>();
-			colors.shuffle(&mut rng);
-			colors
-		};
-
-		let floor_mesh = meshes.add(Plane::new(CHUNK_SIZE as f32, CHUNK_SIZE as f32).into());
-
-		texture_settings.set_defaults(TextureProperties {
-			wrap: TextureWrap::Repeat,
-			filter: FilterMode::Nearest,
-		});
-		let wall_tex_diffuse = asset_server.load("wall_diffuse.png");
-		let wall_tex_normal = asset_server.load("wall_normal.png");
-		let floor_tex_diffuse = asset_server.load("tiles_diffuse.png");
-		let floor_tex_normal = asset_server.load("tiles_normal.png");
-		let ceiling_tex_diffuse = asset_server.load("concrete_diffuse.png");
-		let ceiling_tex_normal = asset_server.load("concrete_normal.png");
-
-		MazeAssets {
-			cube_mesh,
-			shader,
-			wall_colors,
-			wall_tex_diffuse,
-			wall_tex_normal,
-			surface_mesh: floor_mesh,
-			floor_tex_diffuse,
-			floor_tex_normal,
-			ceiling_tex_diffuse,
-			ceiling_tex_normal,
-			rng,
-		}
-	};
-
-	let first_chunk = generate_chunk(&mut cmd, &mut assets, 0, ChunkCoords::ZERO, None);
+fn init_play_state(mut cmd: Commands, mut assets: ResMut<MazeAssets>) {
+	let mut rng = StdRng::seed_from_u64(0);
+	let first_chunk = generate_chunk(
+		&mut cmd,
+		&mut assets,
+		0,
+		ChunkCoords::ZERO,
+		None,
+		&mut rng,
+	);
 
 	let camera_transform = {
 		let (entrance_x, entrance_z) =
@@ -160,7 +206,7 @@ fn spawn_initial_chunk(
 			.maze
 			.get_links(&first_chunk.maze[first_chunk.entrance.node])
 			.into_iter()
-			.choose(&mut assets.rng)
+			.choose(&mut rng)
 			.expect("entrance neighbor");
 		let (neighbor_x, neighbor_z) =
 			maze_to_grid(first_chunk.maze.idx_to_pos(random_entrance_neighbor.idx()));
@@ -176,12 +222,17 @@ fn spawn_initial_chunk(
 		},
 		..Default::default()
 	})
-	.insert(RotationEuler {
-		yaw: camera_transform.rotation.to_axis_angle().1,
-		pitch: 0.,
-	});
-
-	cmd.insert_resource(assets);
+	.insert_bundle((
+		RotationEuler {
+			yaw: camera_transform.rotation.to_axis_angle().1,
+			pitch: 0.,
+		},
+		Reset,
+	));
+	cmd.insert_resource(ControlMode::AutoWalk);
+	cmd.insert_resource(CurrentChunk::default());
+	cmd.insert_resource(AutoWalkState::default());
+	cmd.insert_resource(Random(rng));
 }
 
 struct Wall;
@@ -222,6 +273,8 @@ impl ChunkCoords {
 		)
 	}
 }
+
+struct Reset;
 
 #[derive(Default)]
 struct RotationEuler {
@@ -340,14 +393,15 @@ fn update_uniforms_from_camera(
 		Query<&mut Uniforms>,
 	)>,
 ) {
-	let (camera_transform, view_c, projection_c) = q.q0().single().unwrap();
-	let (view, projection) = (view_c.0, projection_c.0);
-	let camera_position = camera_transform.translation;
-	for mut uniforms in q.q1_mut().iter_mut() {
-		uniforms.view_pos = camera_position;
-		uniforms.view = view;
-		uniforms.projection = projection;
-		uniforms.light_pos = camera_position;
+	if let Ok((camera_transform, view_c, projection_c)) = q.q0().single() {
+		let (view, projection) = (view_c.0, projection_c.0);
+		let camera_position = camera_transform.translation;
+		for mut uniforms in q.q1_mut().iter_mut() {
+			uniforms.view_pos = camera_position;
+			uniforms.view = view;
+			uniforms.projection = projection;
+			uniforms.light_pos = camera_position;
+		}
 	}
 }
 
@@ -424,6 +478,12 @@ enum ControlMode {
 }
 
 struct ControlModeChanged(ControlMode);
+
+fn read_restart_input(input: Res<Input<KeyCode>>, mut state: ResMut<State<GameState>>) {
+	if let Some(KeyCode::T) = input.get_just_pressed().next() {
+		state.set(GameState::Preload).unwrap();
+	}
+}
 
 #[derive(Clone, Copy, Debug)]
 enum CollisionEdge {
@@ -502,6 +562,7 @@ fn spawn_additional_chunk(
 	mut assets: ResMut<MazeAssets>,
 	q: Query<(Entity, &Chunk)>,
 	mut entered_event: EventReader<ChunkEntered>,
+	mut rng: ResMut<Random>,
 ) {
 	let (last_chunk_ent, last_chunk_data) = q
 		.iter()
@@ -545,6 +606,7 @@ fn spawn_additional_chunk(
 			last_chunk_data.index + 1,
 			next_chunk_coords,
 			Some(next_chunk_entrance),
+			&mut rng.0,
 		);
 	}
 }
@@ -694,15 +756,22 @@ fn auto_walk(
 	}
 }
 
+fn reset_play_state(mut cmd: Commands, q: Query<Entity, With<Reset>>) {
+	for e in q.iter() {
+		cmd.entity(e).despawn_recursive();
+	}
+}
+
 fn generate_chunk(
 	cmd: &mut Commands,
 	assets: &mut MazeAssets,
 	index: usize,
 	coords: ChunkCoords,
 	known_entrance: Option<SidedNode>,
+	rng: &mut impl Rng,
 ) -> Chunk {
 	const MAZE_SIZE: usize = (CHUNK_SIZE as usize - 1) / 2;
-	let maze = maze_gen::generate(MAZE_SIZE, MAZE_SIZE, &mut assets.rng);
+	let maze = maze_gen::generate(MAZE_SIZE, MAZE_SIZE, rng);
 	let mut grid = {
 		let mut grid = [[true; CHUNK_SIZE as usize]; CHUNK_SIZE as usize];
 		for (maze_z, row) in maze.iter_rows().enumerate() {
@@ -723,11 +792,11 @@ fn generate_chunk(
 	let make_entrance_passage = known_entrance.is_some();
 	let (entrance, exit) = {
 		let entrance = known_entrance.unwrap_or_else(|| {
-			let side = GridDirection::ALL[assets.rng.gen_range(0..4)];
+			let side = GridDirection::ALL[rng.gen_range(0..4)];
 			SidedNode {
 				node: maze
 					.get_edge_nodes(side)
-					.choose(&mut assets.rng)
+					.choose(rng)
 					.expect("select entrance node")
 					.idx(),
 				side,
@@ -777,7 +846,7 @@ fn generate_chunk(
 		entrance,
 		exit,
 	};
-	let chunk_entity = cmd.spawn_bundle((chunk.clone(),)).id();
+	let chunk_entity = cmd.spawn_bundle((chunk.clone(), Reset)).id();
 	let wall_color: Vec3 = assets.wall_colors[index % assets.wall_colors.len()].into();
 
 	for x in 0..CHUNK_SIZE {
