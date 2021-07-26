@@ -33,12 +33,12 @@ uniform vec3 light_pos;
 uniform vec3 view_pos;
 uniform vec3 light_color;
 uniform vec3 object_color;
+uniform float normal_map_intensity;
 uniform sampler2D diffuse_tex;
 uniform sampler2D normal_tex;
 
 vec3 ambient_color=vec3(1.)*.2;
 vec3 normal_map_flat_color=vec3(.5,.5,1.);
-float normal_map_intensity=.15;
 
 mat3 cotangent_frame(vec3 normal,vec3 pos,vec2 uv){
 	vec3 dp1=dFdx(pos);

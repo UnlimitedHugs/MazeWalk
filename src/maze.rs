@@ -1,4 +1,8 @@
+mod tweaks;
+
 use std::cmp::Ordering;
+
+use tweaks::{Tweaks, TweaksPlugin};
 
 use super::{
 	maze_gen::{self, GridDirection, GridMaze, GridNode},
@@ -7,7 +11,6 @@ use super::{
 	utils::{Cube, Plane},
 };
 use bevy::{
-	core::Stopwatch,
 	input::mouse::MouseMotion,
 	math::{vec2, vec3},
 	prelude::*,
@@ -34,7 +37,8 @@ impl Plugin for MazePlugin {
 	fn build(&self, app: &mut AppBuilder) {
 		use SystemLabels::*;
 		#[rustfmt::skip]
-		app.insert_resource(RenderSettings {
+		app.add_plugin(TweaksPlugin)
+		.insert_resource(RenderSettings {
 			pipeline: PipelineParams {
 				depth_test: Comparison::LessOrEqual,
 				depth_write: true,
@@ -54,7 +58,7 @@ impl Plugin for MazePlugin {
 		.add_system_set_to_stage(
 			CoreStage::PreUpdate,
 			SystemSet::on_update(GameState::Preload)
-				.with_system(switch_to_play_state.system().before(InitPlayState))
+				.with_system(wait_for_tweaks_ready.system().before(InitPlayState))
 		)
 		.add_system_set_to_stage(
 			CoreStage::PreUpdate,
@@ -74,6 +78,7 @@ impl Plugin for MazePlugin {
 				.with_system(despawn_traversed_chunks.system())
 				.with_system(read_control_mode_input.system())
 				.with_system(read_restart_input.system())
+				.with_system(restart_on_tweaks_changed.system())
 		)
 		.add_system_set(
 			SystemSet::on_exit(GameState::Play)
@@ -102,6 +107,8 @@ fn preload_assets(
 	#[cfg(debug_assertions)]
 	asset_server.watch_for_changes().unwrap();
 
+	let _tweaks = asset_server.load("tweaks.yml");
+
 	let mut rng = StdRng::from_entropy();
 	let cube_mesh = meshes.add(Cube::new(CELL_SIZE).into());
 	let shader = asset_server.load("shader.glsl");
@@ -110,13 +117,14 @@ fn preload_assets(
 	shader_meta.set(&shader,
 		&["diffuse_tex", "normal_tex"],
 		&[
-			("model",        UniformType::Mat4),
-			("view",         UniformType::Mat4),
-			("projection",   UniformType::Mat4),
-			("light_pos",    UniformType::Float3),
-			("view_pos",     UniformType::Float3),
-			("light_color",  UniformType::Float3),
-			("object_color", UniformType::Float3),
+			("model",                UniformType::Mat4),
+			("view",                 UniformType::Mat4),
+			("projection",           UniformType::Mat4),
+			("light_pos",            UniformType::Float3),
+			("view_pos",             UniformType::Float3),
+			("light_color",          UniformType::Float3),
+			("object_color",         UniformType::Float3),
+			("normal_map_intensity", UniformType::Float1),
 		],
 	);
 
@@ -160,15 +168,12 @@ fn preload_assets(
 		floor_tex_normal,
 		ceiling_tex_diffuse,
 		ceiling_tex_normal,
+		_tweaks,
 	});
 }
 
-fn switch_to_play_state(
-	mut state: ResMut<State<GameState>>,
-	mut watch: Local<Stopwatch>,
-	time: Res<Time>,
-) {
-	if watch.tick(time.delta()).elapsed_secs() > 0.1 {
+fn wait_for_tweaks_ready(mut state: ResMut<State<GameState>>, tweaks: Option<Res<Tweaks>>) {
+	if tweaks.is_some() {
 		state.replace(GameState::Play).unwrap();
 	}
 }
@@ -184,15 +189,17 @@ struct MazeAssets {
 	floor_tex_normal: Handle<Texture>,
 	ceiling_tex_diffuse: Handle<Texture>,
 	ceiling_tex_normal: Handle<Texture>,
+	_tweaks: Handle<Tweaks>,
 }
 
 struct Random(StdRng);
 
-fn init_play_state(mut cmd: Commands, mut assets: ResMut<MazeAssets>) {
+fn init_play_state(mut cmd: Commands, mut assets: ResMut<MazeAssets>, tweaks: Res<Tweaks>) {
 	let mut rng = StdRng::seed_from_u64(0);
 	let first_chunk = generate_chunk(
 		&mut cmd,
 		&mut assets,
+		&tweaks,
 		0,
 		ChunkCoords::ZERO,
 		None,
@@ -415,6 +422,7 @@ struct Uniforms {
 	light_pos: Vec3,
 	light_color: Vec3,
 	object_color: Vec3,
+	normal_map_intensity: f32,
 }
 
 impl Default for Uniforms {
@@ -427,6 +435,7 @@ impl Default for Uniforms {
 			light_pos: Vec3::ZERO,
 			light_color: vec3(1.0, 1.0, 1.0),
 			object_color: vec3(1.0, 1.0, 1.0),
+			normal_map_intensity: 0.,
 		}
 	}
 }
@@ -560,6 +569,7 @@ fn track_current_chunk(
 fn spawn_additional_chunk(
 	mut cmd: Commands,
 	mut assets: ResMut<MazeAssets>,
+	tweaks: Res<Tweaks>,
 	q: Query<(Entity, &Chunk)>,
 	mut entered_event: EventReader<ChunkEntered>,
 	mut rng: ResMut<Random>,
@@ -603,6 +613,7 @@ fn spawn_additional_chunk(
 		generate_chunk(
 			&mut cmd,
 			&mut assets,
+			&tweaks,
 			last_chunk_data.index + 1,
 			next_chunk_coords,
 			Some(next_chunk_entrance),
@@ -756,6 +767,20 @@ fn auto_walk(
 	}
 }
 
+fn restart_on_tweaks_changed(
+	mut state: ResMut<State<GameState>>,
+	tweaks: Res<Tweaks>,
+	mut initial_ignored: Local<bool>,
+) {
+	if tweaks.is_changed() {
+		if !*initial_ignored {
+			*initial_ignored = true;
+			return;
+		}
+		state.replace(GameState::Preload).unwrap();
+	}
+}
+
 fn reset_play_state(mut cmd: Commands, q: Query<Entity, With<Reset>>) {
 	for e in q.iter() {
 		cmd.entity(e).despawn_recursive();
@@ -765,6 +790,7 @@ fn reset_play_state(mut cmd: Commands, q: Query<Entity, With<Reset>>) {
 fn generate_chunk(
 	cmd: &mut Commands,
 	assets: &mut MazeAssets,
+	tweaks: &Tweaks,
 	index: usize,
 	coords: ChunkCoords,
 	known_entrance: Option<SidedNode>,
@@ -878,6 +904,7 @@ fn generate_chunk(
 				assets.shader.clone(),
 				Uniforms {
 					object_color: wall_color,
+					normal_map_intensity: tweaks.wall_normal_intensity,
 					..Default::default()
 				},
 				TextureBindings(vec![
