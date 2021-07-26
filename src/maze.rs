@@ -20,7 +20,7 @@ use miniquad::{Comparison, CullFace, FilterMode, PipelineParams, TextureWrap, Un
 use rand::{prelude::*, rngs::StdRng};
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
-enum GameState {
+pub enum GameState {
 	Preload,
 	Play,
 }
@@ -58,7 +58,7 @@ impl Plugin for MazePlugin {
 		.add_system_set_to_stage(
 			CoreStage::PreUpdate,
 			SystemSet::on_update(GameState::Preload)
-				.with_system(wait_for_tweaks_ready.system().before(InitPlayState))
+				.with_system(tweaks::wait_for_tweaks_ready.system().before(InitPlayState))
 		)
 		.add_system_set_to_stage(
 			CoreStage::PreUpdate,
@@ -78,7 +78,7 @@ impl Plugin for MazePlugin {
 				.with_system(despawn_traversed_chunks.system())
 				.with_system(read_control_mode_input.system())
 				.with_system(read_restart_input.system())
-				.with_system(restart_on_tweaks_changed.system())
+				.with_system(tweaks::restart_on_tweaks_changed.system())
 		)
 		.add_system_set(
 			SystemSet::on_exit(GameState::Play)
@@ -170,12 +170,6 @@ fn preload_assets(
 		ceiling_tex_normal,
 		_tweaks,
 	});
-}
-
-fn wait_for_tweaks_ready(mut state: ResMut<State<GameState>>, tweaks: Option<Res<Tweaks>>) {
-	if tweaks.is_some() {
-		state.replace(GameState::Play).unwrap();
-	}
 }
 
 struct MazeAssets {
@@ -764,20 +758,6 @@ fn auto_walk(
 				}
 			}
 		}
-	}
-}
-
-fn restart_on_tweaks_changed(
-	mut state: ResMut<State<GameState>>,
-	tweaks: Res<Tweaks>,
-	mut initial_ignored: Local<bool>,
-) {
-	if tweaks.is_changed() {
-		if !*initial_ignored {
-			*initial_ignored = true;
-			return;
-		}
-		state.replace(GameState::Preload).unwrap();
 	}
 }
 

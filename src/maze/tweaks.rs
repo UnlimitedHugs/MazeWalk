@@ -5,6 +5,7 @@ use bevy::{
 };
 use serde_derive::Deserialize;
 use serde_yaml;
+use super::GameState;
 
 #[derive(Deserialize, TypeUuid, Clone, PartialEq)]
 #[uuid = "5b21bd2a-d3b5-4dc8-beb7-435cb1b0e3d8"]
@@ -18,6 +19,26 @@ impl Plugin for TweaksPlugin {
 		app.add_asset::<Tweaks>()
 			.init_asset_loader::<TweaksLoader>()
 			.add_system_to_stage(AssetStage::AssetEvents, tweaks_to_resource.system());
+	}
+}
+
+pub fn wait_for_tweaks_ready(mut state: ResMut<State<GameState>>, tweaks: Option<Res<Tweaks>>) {
+	if tweaks.is_some() {
+		state.replace(GameState::Play).unwrap();
+	}
+}
+
+pub fn restart_on_tweaks_changed(
+	mut state: ResMut<State<GameState>>,
+	tweaks: Res<Tweaks>,
+	mut initial_ignored: Local<bool>,
+) {
+	if tweaks.is_changed() {
+		if !*initial_ignored {
+			*initial_ignored = true;
+			return;
+		}
+		state.replace(GameState::Preload).unwrap();
 	}
 }
 
