@@ -18,6 +18,7 @@ use bevy::{
 use easer::functions::{Easing, Quad};
 use miniquad::{Comparison, CullFace, FilterMode, PipelineParams, TextureWrap, UniformType};
 use rand::{prelude::*, rngs::StdRng};
+use serde_derive::Deserialize;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub enum GameState {
@@ -123,8 +124,11 @@ fn preload_assets(
 			("light_pos",            UniformType::Float3),
 			("view_pos",             UniformType::Float3),
 			("light_color",          UniformType::Float3),
+			("ambient_intensity",    UniformType::Float1),
 			("object_color",         UniformType::Float3),
 			("normal_map_intensity", UniformType::Float1),
+			("specular_strength",    UniformType::Float1),
+			("shininess",            UniformType::Float1),
 		],
 	);
 
@@ -230,7 +234,7 @@ fn init_play_state(mut cmd: Commands, mut assets: ResMut<MazeAssets>, tweaks: Re
 		},
 		Reset,
 	));
-	cmd.insert_resource(ControlMode::AutoWalk);
+	cmd.insert_resource(ControlMode::Manual);
 	cmd.insert_resource(CurrentChunk::default());
 	cmd.insert_resource(AutoWalkState::default());
 	cmd.insert_resource(Random(rng));
@@ -406,6 +410,25 @@ fn update_uniforms_from_camera(
 	}
 }
 
+#[derive(Clone, Copy, PartialEq, Deserialize)]
+pub struct Material {
+	pub color: u32,
+	pub normal_intensity: f32,
+	pub specular_strength: f32,
+	pub shininess: f32,
+}
+
+impl Default for Material {
+	fn default() -> Self {
+		Self {
+			color: 0xFFFFFF,
+			normal_intensity: 0.5,
+			specular_strength: 0.5,
+			shininess: 32.0,
+		}
+	}
+}
+
 #[repr(C)]
 #[derive(Clone)]
 struct Uniforms {
@@ -415,12 +438,15 @@ struct Uniforms {
 	view_pos: Vec3,
 	light_pos: Vec3,
 	light_color: Vec3,
+	ambient_intensity: f32,
 	object_color: Vec3,
 	normal_map_intensity: f32,
+	specular_strength: f32,
+	shininess: f32,
 }
 
-impl Default for Uniforms {
-	fn default() -> Self {
+impl Uniforms {
+	fn from_material(m: Material) -> Self {
 		Self {
 			model: Mat4::IDENTITY,
 			view: Mat4::IDENTITY,
@@ -428,9 +454,18 @@ impl Default for Uniforms {
 			view_pos: Vec3::ZERO,
 			light_pos: Vec3::ZERO,
 			light_color: vec3(1.0, 1.0, 1.0),
-			object_color: vec3(1.0, 1.0, 1.0),
-			normal_map_intensity: 0.,
+			ambient_intensity: 0.2,
+			object_color: Color::rgb_u32(m.color).into(),
+			normal_map_intensity: m.normal_intensity,
+			specular_strength: m.specular_strength,
+			shininess: m.shininess,
 		}
+	}
+}
+
+impl Default for Uniforms {
+	fn default() -> Self {
+		Uniforms::from_material(Default::default())
 	}
 }
 
@@ -853,7 +888,17 @@ fn generate_chunk(
 		exit,
 	};
 	let chunk_entity = cmd.spawn_bundle((chunk.clone(), Reset)).id();
-	let wall_color: Vec3 = assets.wall_colors[index % assets.wall_colors.len()].into();
+
+	let wall_color = {
+		let chunk_color: Vec3 = assets.wall_colors[index % assets.wall_colors.len()].into();
+		let wall_tweak_color: Vec3 = Color::rgb_u32(tweaks.wall_material.color).into();
+		chunk_color * wall_tweak_color
+	};
+
+	let uniforms_from_material = |m: Material| Uniforms {
+		ambient_intensity: tweaks.ambient_light_intensity,
+		..Uniforms::from_material(m)
+	};
 
 	for x in 0..CHUNK_SIZE {
 		for z in 0..CHUNK_SIZE {
@@ -884,8 +929,7 @@ fn generate_chunk(
 				assets.shader.clone(),
 				Uniforms {
 					object_color: wall_color,
-					normal_map_intensity: tweaks.wall_normal_intensity,
-					..Default::default()
+					..uniforms_from_material(tweaks.wall_material)
 				},
 				TextureBindings(vec![
 					assets.wall_tex_diffuse.clone(),
@@ -900,7 +944,6 @@ fn generate_chunk(
 	let wall_floor_common_components = (
 		assets.surface_mesh.clone(),
 		assets.shader.clone(),
-		Uniforms::default(),
 		Parent(chunk_entity),
 	);
 
@@ -916,6 +959,7 @@ fn generate_chunk(
 			assets.floor_tex_diffuse.clone(),
 			assets.floor_tex_normal.clone(),
 		]),
+		uniforms_from_material(tweaks.floor_material),
 	))
 	.insert_bundle(wall_floor_common_components.clone());
 
@@ -929,6 +973,7 @@ fn generate_chunk(
 			assets.ceiling_tex_diffuse.clone(),
 			assets.ceiling_tex_normal.clone(),
 		]),
+		uniforms_from_material(tweaks.ceiling_material),
 	))
 	.insert_bundle(wall_floor_common_components);
 

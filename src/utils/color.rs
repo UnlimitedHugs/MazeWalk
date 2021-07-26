@@ -161,6 +161,15 @@ impl Color {
 		)
 	}
 
+	/// Decode Color from RGB integer
+	pub fn rgb_u32(c: u32) -> Color {
+		Color::rgb_u8(
+			((c >> 16) & 0xFF) as u8,
+			((c >> 8) & 0xFF) as u8,
+			((c >> 0) & 0xFF) as u8,
+		)
+	}
+
 	/// Get red in sRGB colorspace.
 	pub fn r(&self) -> f32 {
 		match self.as_rgba() {
@@ -1126,5 +1135,18 @@ mod colorspace {
 
 			(hue, saturation, lightness)
 		}
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn color_u32() {
+		let c = Color::rgb_u32(0xFF8000);
+		assert_eq!(c.r(), 1.0);
+		assert_eq!(c.g(), 0.5019608);
+		assert_eq!(c.b(), 0.0);
 	}
 }

@@ -32,12 +32,15 @@ in vec2 TexCoords;
 uniform vec3 light_pos;
 uniform vec3 view_pos;
 uniform vec3 light_color;
+uniform float ambient_intensity;
 uniform vec3 object_color;
 uniform float normal_map_intensity;
+uniform float specular_strength;
+uniform float shininess;
 uniform sampler2D diffuse_tex;
 uniform sampler2D normal_tex;
 
-vec3 ambient_color=vec3(1.)*.2;
+vec3 ambient_color=vec3(1.);
 vec3 normal_map_flat_color=vec3(.5,.5,1.);
 
 mat3 cotangent_frame(vec3 normal,vec3 pos,vec2 uv){
@@ -65,16 +68,18 @@ void main(){
 	// diffuse
 	vec3 light_dir=normalize(light_pos-FragPos);
 	float diff=max(dot(norm,light_dir),0.);
-	vec3 diffuse=diff*light_color*texture(diffuse_tex,TexCoords).rgb;
+	vec3 diffuse=diff*light_color*(texture(diffuse_tex,TexCoords).rgb*object_color);
 	
 	// specular
-	float specular_strength=.5;
 	vec3 view_dir=normalize(view_pos-FragPos);
 	vec3 reflect_dir=reflect(-light_dir,norm);
-	float spec=pow(max(dot(view_dir,reflect_dir),0.),32);
+	float spec=pow(max(dot(view_dir,reflect_dir),0.),shininess);
 	vec3 specular=specular_strength*spec*light_color;
-	
-	vec3 result=(ambient_color+diffuse+specular)*object_color;
+
+	// ambient
+	vec3 ambient = ambient_intensity * ambient_color;
+
+	vec3 result=ambient+diffuse+specular;
 	FragColor=vec4(result,1.);
 }
 

@@ -1,3 +1,4 @@
+use super::{GameState, Material};
 use bevy::{
 	asset::{AssetLoader, AssetStage, BoxedFuture, LoadContext, LoadedAsset},
 	prelude::*,
@@ -5,12 +6,14 @@ use bevy::{
 };
 use serde_derive::Deserialize;
 use serde_yaml;
-use super::GameState;
 
 #[derive(Deserialize, TypeUuid, Clone, PartialEq)]
 #[uuid = "5b21bd2a-d3b5-4dc8-beb7-435cb1b0e3d8"]
 pub struct Tweaks {
-	pub wall_normal_intensity: f32,
+	pub ambient_light_intensity: f32,
+	pub ceiling_material: Material,
+	pub wall_material: Material,
+	pub floor_material: Material,
 }
 
 pub struct TweaksPlugin;
