@@ -1,3 +1,6 @@
 [submodule "bevy_miniquad"]
 	path = bevy_miniquad
 	url = https://github.com/smokku/bevy_miniquad
+[submodule "miniquad"]
+	path = miniquad
+	url = https://github.com/not-fl3/miniquad

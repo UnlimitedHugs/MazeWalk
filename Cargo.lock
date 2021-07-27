@@ -893,8 +893,7 @@ checksum = "b16bd47d9e329435e309c58469fe0791c2d0d1ba96ec0954152a5ae2b04387dc"
 
 [[package]]
 name = "miniquad"
-version = "0.3.0-alpha.36"
-source = "git+https://github.com/not-fl3/miniquad#3a0e5f55cf273325b82882839cd13eac3648ad01"
+version = "0.3.0-alpha.37"
 dependencies = [
  "sapp-android",
  "sapp-darwin",
@@ -1252,7 +1251,6 @@ dependencies = [
 [[package]]
 name = "sapp-android"
 version = "0.1.8"
-source = "git+https://github.com/not-fl3/miniquad#3a0e5f55cf273325b82882839cd13eac3648ad01"
 dependencies = [
  "libc",
  "ndk-sys",
@@ -1261,7 +1259,6 @@ dependencies = [
 [[package]]
 name = "sapp-darwin"
 version = "0.1.6"
-source = "git+https://github.com/not-fl3/miniquad#3a0e5f55cf273325b82882839cd13eac3648ad01"
 dependencies = [
  "cc",
 ]
@@ -1269,7 +1266,6 @@ dependencies = [
 [[package]]
 name = "sapp-dummy"
 version = "0.1.5"
-source = "git+https://github.com/not-fl3/miniquad#3a0e5f55cf273325b82882839cd13eac3648ad01"
 dependencies = [
  "libc",
 ]
@@ -1277,7 +1273,6 @@ dependencies = [
 [[package]]
 name = "sapp-ios"
 version = "0.1.2"
-source = "git+https://github.com/not-fl3/miniquad#3a0e5f55cf273325b82882839cd13eac3648ad01"
 dependencies = [
  "cc",
 ]
@@ -1285,7 +1280,6 @@ dependencies = [
 [[package]]
 name = "sapp-linux"
 version = "0.1.13"
-source = "git+https://github.com/not-fl3/miniquad#3a0e5f55cf273325b82882839cd13eac3648ad01"
 dependencies = [
  "libc",
 ]
@@ -1293,12 +1287,10 @@ dependencies = [
 [[package]]
 name = "sapp-wasm"
 version = "0.1.26"
-source = "git+https://github.com/not-fl3/miniquad#3a0e5f55cf273325b82882839cd13eac3648ad01"
 
 [[package]]
 name = "sapp-windows"
 version = "0.2.18"
-source = "git+https://github.com/not-fl3/miniquad#3a0e5f55cf273325b82882839cd13eac3648ad01"
 dependencies = [
  "winapi",
 ]

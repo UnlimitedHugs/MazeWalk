@@ -4,11 +4,12 @@ version = "0.1.0"
 authors = ["UnlimitedHugs <unlimited.hugs@gmail.com>"]
 edition = "2018"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[patch."https://github.com/not-fl3/miniquad.git"]
+miniquad = { path = "miniquad" }
 
 [dependencies]
 bevy = { version = "=0.5.0", default-features = false, features = ["dynamic"] }
-miniquad = { git = "https://github.com/not-fl3/miniquad" }
+miniquad = { path = "miniquad" }
 bevy_miniquad = { path = "bevy_miniquad" }
 rand = "0.8.4"
 easer = "0.2.1"
