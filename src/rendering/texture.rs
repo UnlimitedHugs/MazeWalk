@@ -40,12 +40,14 @@ impl TextureLoadSettings {
 pub struct TextureProperties {
 	pub wrap: TextureWrap,
 	pub filter: FilterMode,
+	pub anisotropy: f32,
 }
 impl Default for TextureProperties {
 	fn default() -> Self {
 		Self {
 			wrap: TextureWrap::Clamp,
 			filter: FilterMode::Linear,
+			anisotropy: 0.0,
 		}
 	}
 }
@@ -60,7 +62,7 @@ pub fn upload_textures(
 	for evt in texture_events.iter() {
 		if let AssetEvent::Created { handle } = evt {
 			if let Some(tex) = textures.get(handle) {
-				let TextureProperties { wrap, filter } = load_settings
+				let TextureProperties { wrap, filter, anisotropy } = load_settings
 					.per_asset
 					.get(&handle.id)
 					.unwrap_or_else(|| &load_settings.defaults);
@@ -77,6 +79,7 @@ pub fn upload_textures(
 								height: tex.height,
 								wrap: *wrap,
 								filter: *filter,
+								anisotropy: *anisotropy,
 							},
 						),
 					)

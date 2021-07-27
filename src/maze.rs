@@ -152,7 +152,8 @@ fn preload_assets(
 
 	texture_settings.set_defaults(TextureProperties {
 		wrap: TextureWrap::Repeat,
-		filter: FilterMode::Nearest,
+		filter: FilterMode::Linear,
+		anisotropy: 8.0,
 	});
 	let wall_tex_diffuse = asset_server.load("wall_diffuse.png");
 	let wall_tex_normal = asset_server.load("wall_normal.png");
