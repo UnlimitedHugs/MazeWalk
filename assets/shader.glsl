@@ -42,6 +42,8 @@ uniform sampler2D normal_tex;
 
 vec3 ambient_color = vec3(1.);
 vec3 normal_map_flat_color = vec3(.5, .5, 1.);
+float light_linear_term = -0.02;
+float light_quadratic_term = 0.12;
 
 mat3 cotangent_frame(vec3 normal, vec3 pos, vec2 uv) {
 	vec3 dp1 = dFdx(pos);
@@ -79,7 +81,12 @@ void main() {
 	// ambient
 	vec3 ambient = ambient_intensity * ambient_color;
 
-	vec3 result = ambient + diffuse + specular;
+	// light
+	float light_distance = length(light_pos - FragPos);
+	float light_attenuation = 1.0 / (1.0 + light_linear_term * light_distance +
+		light_quadratic_term * (light_distance * light_distance));
+
+	vec3 result = (ambient + diffuse + specular) * light_attenuation;
 	FragColor = vec4(result, 1.);
 }
 

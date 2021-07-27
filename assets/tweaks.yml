@@ -1,4 +1,4 @@
-ambient_light_intensity: 0.18
+ambient_light_intensity: 0.1
 ceiling_material:
     color: 0xFFFFFF
     normal_intensity: 0.6
