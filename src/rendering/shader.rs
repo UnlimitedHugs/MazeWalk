@@ -144,6 +144,10 @@ impl AssetLoader for ShaderLoader {
 	) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
 		Box::pin(async move {
 			let contents = str::from_utf8(bytes).with_context(|| "read shader utf8")?;
+			if contents.len() == 0 {
+				// asset loader bug?
+				return Ok(())
+			}
 			if !contents.starts_with("#version") {
 				bail!("expected version directive")
 			}
