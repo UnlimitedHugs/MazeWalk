@@ -8,11 +8,11 @@ use super::{
 	maze_gen::{self, GridDirection, GridMaze, GridNode},
 	rendering::*,
 	utils::Color,
-	utils::{Cube, Plane},
+	utils::{Plane, Quad as QuadShape},
 };
 use bevy::{
 	input::mouse::MouseMotion,
-	math::{vec2, vec3},
+	math::{ivec2, vec2, vec3},
 	prelude::*,
 };
 use easer::functions::{Easing, Quad};
@@ -111,7 +111,6 @@ fn preload_assets(
 	let _tweaks = asset_server.load("tweaks.yml");
 
 	let mut rng = StdRng::from_entropy();
-	let cube_mesh = meshes.add(Cube::new(CELL_SIZE).into());
 	let shader = asset_server.load("shader.glsl");
 
 	#[rustfmt::skip]
@@ -163,7 +162,6 @@ fn preload_assets(
 	let ceiling_tex_normal = asset_server.load("concrete_normal.png");
 
 	cmd.insert_resource(MazeAssets {
-		cube_mesh,
 		shader,
 		wall_colors,
 		wall_tex_diffuse,
@@ -178,7 +176,6 @@ fn preload_assets(
 }
 
 struct MazeAssets {
-	cube_mesh: Handle<Mesh>,
 	shader: Handle<Shader>,
 	wall_colors: Vec<Color>,
 	wall_tex_diffuse: Handle<Texture>,
@@ -193,11 +190,17 @@ struct MazeAssets {
 
 struct Random(StdRng);
 
-fn init_play_state(mut cmd: Commands, mut assets: ResMut<MazeAssets>, tweaks: Res<Tweaks>) {
+fn init_play_state(
+	mut cmd: Commands,
+	mut assets: ResMut<MazeAssets>,
+	meshes: ResMut<Assets<Mesh>>,
+	tweaks: Res<Tweaks>,
+) {
 	let mut rng = StdRng::seed_from_u64(0);
 	let first_chunk = generate_chunk(
 		&mut cmd,
 		&mut assets,
+		meshes,
 		&tweaks,
 		0,
 		ChunkCoords::ZERO,
@@ -599,6 +602,7 @@ fn track_current_chunk(
 fn spawn_additional_chunk(
 	mut cmd: Commands,
 	mut assets: ResMut<MazeAssets>,
+	meshes: ResMut<Assets<Mesh>>,
 	tweaks: Res<Tweaks>,
 	q: Query<(Entity, &Chunk)>,
 	mut entered_event: EventReader<ChunkEntered>,
@@ -643,6 +647,7 @@ fn spawn_additional_chunk(
 		generate_chunk(
 			&mut cmd,
 			&mut assets,
+			meshes,
 			&tweaks,
 			last_chunk_data.index + 1,
 			next_chunk_coords,
@@ -806,6 +811,7 @@ fn reset_play_state(mut cmd: Commands, q: Query<Entity, With<Reset>>) {
 fn generate_chunk(
 	cmd: &mut Commands,
 	assets: &mut MazeAssets,
+	mut meshes: ResMut<Assets<Mesh>>,
 	tweaks: &Tweaks,
 	index: usize,
 	coords: ChunkCoords,
@@ -877,8 +883,12 @@ fn generate_chunk(
 		}
 	}
 
-	let has_block = |x: i32, z: i32| {
-		x >= 0 && x < CHUNK_SIZE && z >= 0 && z < CHUNK_SIZE && grid[z as usize][x as usize]
+	let has_block = |pos: IVec2| {
+		pos.x >= 0
+			&& pos.x < CHUNK_SIZE
+			&& pos.y >= 0
+			&& pos.y < CHUNK_SIZE
+			&& grid[pos.y as usize][pos.x as usize]
 	};
 
 	let chunk = Chunk {
@@ -901,20 +911,22 @@ fn generate_chunk(
 		..Uniforms::from_material(m)
 	};
 
+	let quad_mesh: Mesh = QuadShape::new(Vec2::splat(1.0)).into();
+
 	for x in 0..CHUNK_SIZE {
 		for z in 0..CHUNK_SIZE {
-			if !has_block(x, z) {
+			let cell_pos = ivec2(x, z);
+			if !has_block(cell_pos) {
 				continue;
 			}
-			let transform = GlobalTransform::from_translation(
+			let cell_transform = GlobalTransform::from_translation(
 				vec3(x as f32, 0., z as f32) + coords.to_world_pos(),
 			);
 			let edges = CollisionEdges {
 				edges: CollisionEdge::ALL
 					.iter()
 					.filter_map(|e| {
-						let (dx, dz) = e.get_direction();
-						if !has_block(x + dx, z + dz) {
+						if !has_block(cell_pos + e.get_direction().to_ivec2()) {
 							Some(e)
 						} else {
 							None
@@ -923,10 +935,22 @@ fn generate_chunk(
 					.copied()
 					.collect(),
 			};
+			let walls_mesh = {
+				let mut mesh = Mesh::new();
+				for dir in GridDirection::ALL.iter() {
+					if !has_block(cell_pos + dir.get_offset().to_ivec2()) {
+						let face_transform = dir.get_offset().to_mat4()
+							* Mat4::from_translation(vec3(0., 0., 0.5));
+						mesh.extend_with(quad_mesh.transform(face_transform))
+					}
+				}
+				meshes.add(mesh)
+			};
+
 			cmd.spawn_bundle((
 				Wall,
-				transform,
-				assets.cube_mesh.clone(),
+				cell_transform,
+				walls_mesh,
 				assets.shader.clone(),
 				Uniforms {
 					object_color: wall_color,
@@ -1056,6 +1080,8 @@ impl GridDirection {
 trait TupleVecConversion {
 	fn to_vec2(self) -> Vec2;
 	fn to_vec3(self) -> Vec3;
+	fn to_ivec2(self) -> IVec2;
+	fn to_mat4(self) -> Mat4;
 }
 impl TupleVecConversion for (i32, i32) {
 	fn to_vec2(self) -> Vec2 {
@@ -1064,6 +1090,14 @@ impl TupleVecConversion for (i32, i32) {
 
 	fn to_vec3(self) -> Vec3 {
 		Vec3::new(self.0 as f32, 0., self.1 as f32)
+	}
+
+	fn to_ivec2(self) -> IVec2 {
+		IVec2::new(self.0, self.1)
+	}
+
+	fn to_mat4(self) -> Mat4 {
+		Mat4::look_at_rh(Vec3::ZERO, self.to_vec3() * vec3(1., 1., -1.), Vec3::Y)
 	}
 }
 
