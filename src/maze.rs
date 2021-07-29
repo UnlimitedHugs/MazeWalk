@@ -901,9 +901,7 @@ fn generate_chunk(
 			if !has_block(cell_pos) {
 				continue;
 			}
-			let cell_transform = GlobalTransform::from_translation(
-				vec3(x as f32, 0., z as f32) + coords.to_world_pos(),
-			);
+			let cell_transform = Transform::from_translation(vec3(x as f32, 0., z as f32));
 			let edges = CollisionEdges {
 				edges: CollisionEdge::ALL
 					.iter()
@@ -918,7 +916,7 @@ fn generate_chunk(
 					.collect(),
 			};
 
-			let cell_offset_mat = Mat4::from_translation(vec3(x as f32, 0., z as f32));
+			let cell_offset_mat = cell_transform.compute_matrix();
 			for dir in GridDirection::ALL.iter() {
 				if !has_block(cell_pos + dir.get_offset().to_ivec2()) {
 					let face_transform =
@@ -927,7 +925,9 @@ fn generate_chunk(
 				}
 			}
 
-			let wall_entity = cmd.spawn_bundle((Wall, cell_transform, edges)).id();
+			let wall_entity = cmd
+				.spawn_bundle((Wall, cell_transform, GlobalTransform::identity(), edges))
+				.id();
 			chunk_walls.push(wall_entity);
 		}
 	}
@@ -953,12 +953,13 @@ fn generate_chunk(
 
 	let chunk_mesh_handle = meshes.add(chunk_mesh);
 
-	let chunk_transform = GlobalTransform::from_translation(coords.to_world_pos());
+	let chunk_transform = Transform::from_translation(coords.to_world_pos());
 
 	let chunk_entity = cmd
 		.spawn_bundle((
 			chunk.clone(),
 			chunk_transform,
+			GlobalTransform::identity(),
 			chunk_mesh_handle,
 			assets.shader.clone(),
 			Uniforms {
@@ -982,12 +983,12 @@ fn generate_chunk(
 
 	let chunk_center = {
 		let center_offset = CHUNK_SIZE as f32 / 2. - CELL_SIZE / 2.;
-		coords.to_world_pos() + vec3(center_offset, 0., center_offset)
+		vec3(center_offset, 0., center_offset)
 	};
-	let floor_transform =
-		GlobalTransform::from_translation(chunk_center + vec3(0., -CELL_SIZE / 2., 0.));
+	let floor_transform = Transform::from_translation(chunk_center + vec3(0., -CELL_SIZE / 2., 0.));
 	cmd.spawn_bundle((
 		floor_transform,
+		GlobalTransform::identity(),
 		TextureBindings(vec![
 			assets.floor_tex_diffuse.clone(),
 			assets.floor_tex_normal.clone(),
@@ -996,12 +997,13 @@ fn generate_chunk(
 	))
 	.insert_bundle(wall_floor_common_components.clone());
 
-	let ceiling_transform = GlobalTransform::from_matrix(
+	let ceiling_transform = Transform::from_matrix(
 		Mat4::from_translation(chunk_center + vec3(0., CELL_SIZE / 2., 0.))
 			* Mat4::from_rotation_z(PI),
 	);
 	cmd.spawn_bundle((
 		ceiling_transform,
+		GlobalTransform::identity(),
 		TextureBindings(vec![
 			assets.ceiling_tex_diffuse.clone(),
 			assets.ceiling_tex_normal.clone(),
