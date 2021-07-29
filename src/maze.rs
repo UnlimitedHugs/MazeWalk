@@ -891,27 +891,9 @@ fn generate_chunk(
 			&& grid[pos.y as usize][pos.x as usize]
 	};
 
-	let chunk = Chunk {
-		index,
-		coords,
-		maze,
-		entrance,
-		exit,
-	};
-	let chunk_entity = cmd.spawn_bundle((chunk.clone(), Reset)).id();
-
-	let wall_color = {
-		let chunk_color: Vec3 = assets.wall_colors[index % assets.wall_colors.len()].into();
-		let wall_tweak_color: Vec3 = Color::rgb_u32(tweaks.wall_material.color).into();
-		chunk_color * wall_tweak_color
-	};
-
-	let uniforms_from_material = |m: Material| Uniforms {
-		ambient_intensity: tweaks.ambient_light_intensity,
-		..Uniforms::from_material(m)
-	};
-
 	let quad_mesh: Mesh = QuadShape::new(Vec2::splat(1.0)).into();
+	let mut chunk_mesh = Mesh::new();
+	let mut chunk_walls = vec![];
 
 	for x in 0..CHUNK_SIZE {
 		for z in 0..CHUNK_SIZE {
@@ -935,36 +917,62 @@ fn generate_chunk(
 					.copied()
 					.collect(),
 			};
-			let walls_mesh = {
-				let mut mesh = Mesh::new();
-				for dir in GridDirection::ALL.iter() {
-					if !has_block(cell_pos + dir.get_offset().to_ivec2()) {
-						let face_transform = dir.get_offset().to_mat4()
-							* Mat4::from_translation(vec3(0., 0., 0.5));
-						mesh.extend_with(quad_mesh.transform(face_transform))
-					}
-				}
-				meshes.add(mesh)
-			};
 
-			cmd.spawn_bundle((
-				Wall,
-				cell_transform,
-				walls_mesh,
-				assets.shader.clone(),
-				Uniforms {
-					object_color: wall_color,
-					..uniforms_from_material(tweaks.wall_material)
-				},
-				TextureBindings(vec![
-					assets.wall_tex_diffuse.clone(),
-					assets.wall_tex_normal.clone(),
-				]),
-				edges,
-				Parent(chunk_entity),
-			));
+			let cell_offset_mat = Mat4::from_translation(vec3(x as f32, 0., z as f32));
+			for dir in GridDirection::ALL.iter() {
+				if !has_block(cell_pos + dir.get_offset().to_ivec2()) {
+					let face_transform =
+						dir.get_offset().to_mat4() * Mat4::from_translation(vec3(0., 0., 0.5));
+					chunk_mesh.extend_with(quad_mesh.transform(cell_offset_mat * face_transform))
+				}
+			}
+
+			let wall_entity = cmd.spawn_bundle((Wall, cell_transform, edges)).id();
+			chunk_walls.push(wall_entity);
 		}
 	}
+
+	let chunk = Chunk {
+		index,
+		coords,
+		maze,
+		entrance,
+		exit,
+	};
+
+	let wall_color = {
+		let chunk_color: Vec3 = assets.wall_colors[index % assets.wall_colors.len()].into();
+		let wall_tweak_color: Vec3 = Color::rgb_u32(tweaks.wall_material.color).into();
+		chunk_color * wall_tweak_color
+	};
+
+	let uniforms_from_material = |m: Material| Uniforms {
+		ambient_intensity: tweaks.ambient_light_intensity,
+		..Uniforms::from_material(m)
+	};
+
+	let chunk_mesh_handle = meshes.add(chunk_mesh);
+
+	let chunk_transform = GlobalTransform::from_translation(coords.to_world_pos());
+
+	let chunk_entity = cmd
+		.spawn_bundle((
+			chunk.clone(),
+			chunk_transform,
+			chunk_mesh_handle,
+			assets.shader.clone(),
+			Uniforms {
+				object_color: wall_color,
+				..uniforms_from_material(tweaks.wall_material)
+			},
+			TextureBindings(vec![
+				assets.wall_tex_diffuse.clone(),
+				assets.wall_tex_normal.clone(),
+			]),
+			Reset,
+		))
+		.push_children(&chunk_walls)
+		.id();
 
 	let wall_floor_common_components = (
 		assets.surface_mesh.clone(),
