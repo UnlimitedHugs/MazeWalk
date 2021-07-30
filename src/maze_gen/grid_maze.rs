@@ -185,7 +185,7 @@ impl GridMaze {
 
 	pub fn up(&self, node: &GridNode) -> Option<GridNode> {
 		let node_index = node.idx();
-		if node_index > self.cols {
+		if node_index >= self.cols {
 			self.nodes.get(node_index - self.cols).copied()
 		} else {
 			None
