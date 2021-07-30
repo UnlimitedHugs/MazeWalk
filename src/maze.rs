@@ -707,7 +707,10 @@ fn auto_walk(
 				} else {
 					1.
 				});
-			t = (t + delta).min(1.0);
+			// conserve movement speed during chunk transitions (3 blocks)
+			let walk_distance = state.translation_from.distance(state.translation_to);
+			let tween_duration_multiplier = 2.0 / walk_distance.max(0.0001);
+			t = (t + delta * tween_duration_multiplier).min(1.0);
 			cam_transform.translation = state.translation_from.lerp(state.translation_to, t);
 			let rotation_t = Quad::ease_in_out((t * 2.).min(1.0), 0., 1., 1.);
 			cam_euler.yaw = lerp_angle(state.rotation_from, state.rotation_to, rotation_t);
