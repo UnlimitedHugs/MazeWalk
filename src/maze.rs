@@ -2,6 +2,7 @@ mod tweaks;
 
 use std::cmp::Ordering;
 
+use bevy_miniquad::Context;
 use tweaks::{Tweaks, TweaksPlugin};
 
 use super::{
@@ -78,7 +79,7 @@ impl Plugin for MazePlugin {
 				.with_system(spawn_additional_chunk.system())
 				.with_system(despawn_traversed_chunks.system())
 				.with_system(read_control_mode_input.system())
-				.with_system(read_restart_input.system())
+				.with_system(toggle_fullscreen.exclusive_system())
 				.with_system(tweaks::restart_on_tweaks_changed.system())
 		)
 		.add_system_set(
@@ -521,9 +522,14 @@ enum ControlMode {
 
 struct ControlModeChanged(ControlMode);
 
-fn read_restart_input(input: Res<Input<KeyCode>>, mut state: ResMut<State<GameState>>) {
-	if let Some(KeyCode::T) = input.get_just_pressed().next() {
-		state.set(GameState::Preload).unwrap();
+fn toggle_fullscreen(
+	input: Res<Input<KeyCode>>,
+	mut is_fullscreen: Local<bool>,
+	context: ResMut<Context>,
+) {
+	if let Some(KeyCode::F) = input.get_just_pressed().next() {
+		*is_fullscreen = !*is_fullscreen;
+		context.set_fullscreen(*is_fullscreen);
 	}
 }
 
