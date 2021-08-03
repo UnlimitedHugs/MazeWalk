@@ -2,11 +2,24 @@ use std::slice::Iter;
 
 use bevy_hecs::{Component, Mut, World};
 
+#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub enum Stage {
+	First,
+	AssetLoad,
+	AssetEvents,
+	PreUpdate,
+	Update,
+	PostUpdate,
+	PreRender,
+	Render,
+	Last,
+}
+
 pub struct App {
 	pub world: World,
 	systems: Vec<Box<dyn FnMut(&mut World)>>,
 	runner: Option<Box<dyn FnOnce(App)>>,
-	pending_events: Vec<Box<dyn FnMut(&mut World)>>,
+	pending_systems: Vec<(Box<dyn FnMut(&mut World)>, Stage)>,
 }
 
 impl App {
@@ -15,12 +28,20 @@ impl App {
 			world: World::new(),
 			systems: vec![],
 			runner: None,
-			pending_events: vec![],
+			pending_systems: vec![],
 		}
 	}
 
-	pub fn with_system(mut self, s: impl FnMut(&mut World) + 'static) -> Self {
-		self.systems.push(Box::new(s));
+	pub fn add_system(self, s: impl FnMut(&mut World) + 'static) -> Self {
+		self.add_system_to_stage(s, Stage::Update)
+	}
+
+	pub fn add_system_to_stage(
+		mut self,
+		s: impl FnMut(&mut World) + 'static,
+		stage: Stage,
+	) -> Self {
+		self.pending_systems.push((Box::new(s), stage));
 		self
 	}
 
@@ -36,9 +57,11 @@ impl App {
 	}
 
 	pub fn run(mut self) -> Self {
-		self.systems.extend(self.pending_events.into_iter());
-		self.pending_events = Vec::with_capacity(0);
-		// make sure event systems are handled last
+		self.pending_systems.sort_by_key(|(_, stage)| *stage);
+		self.systems
+			.extend(self.pending_systems.into_iter().map(|(s, _)| s));
+		self.pending_systems = Vec::with_capacity(0);
+		
 		if let Some(runner) = self.runner.take() {
 			(runner)(self);
 			unreachable!();
@@ -47,7 +70,7 @@ impl App {
 		}
 	}
 
-	pub fn with_plugin(&mut self, p: impl Fn(&mut App) + 'static) -> &mut Self {
+	pub fn add_plugin(&mut self, p: impl Fn(&mut App) + 'static) -> &mut Self {
 		(p)(self);
 		self
 	}
@@ -59,9 +82,7 @@ impl App {
 
 	pub fn add_event<T: Send + Sync + 'static>(mut self) -> Self {
 		self.world.insert_resource(Event::<T>::new());
-		self.pending_events
-			.push(Box::new(|w: &mut World| w.get_event::<T>().clear()));
-		self
+		self.add_system_to_stage(|w: &mut World| w.get_event::<T>().clear(), Stage::Last)
 	}
 }
 
@@ -147,21 +168,25 @@ mod tests {
 	struct Evt(i32);
 	struct Count(i32);
 
-	fn count(app:&App) -> i32 {
+	fn count(app: &App) -> i32 {
 		(*app.world.get_resource::<Count>()).0
+	}
+
+	fn increment(w: &mut World, inc: i32) {
+		(*w.get_resource_mut::<Count>()).0 += inc;
 	}
 
 	#[test]
 	fn update_ticks() {
 		let update = |w: &mut World| {
-			(*w.get_resource_mut::<Count>()).0 += 1;
+			increment(w, 1);
 		};
 
 		let mut app = App::new()
 			.insert_resource(Count(0))
-			.with_system(update)
+			.add_system(update)
 			.run();
-		
+
 		assert_eq!(count(&app), 0);
 		app.dispatch_update();
 		assert_eq!(count(&app), 1);
@@ -172,28 +197,51 @@ mod tests {
 	#[test]
 	fn event_cycle() {
 		let emit = |w: &mut World| {
-			if w.get_resource::<Count>().0 == 0 { 
+			if w.get_resource::<Count>().0 == 0 {
 				w.get_event::<Evt>().emit(Evt(5));
 			}
 		};
 
 		let consume = |w: &mut World| {
-			let evt_value = w.get_event::<Evt>().iter().next().map(|e|e.0);
+			let evt_value = w.get_event::<Evt>().iter().next().map(|e| e.0);
 			if let Some(val) = evt_value {
-				(*w.get_resource_mut::<Count>()).0 += val;
+				increment(w, val);
 			}
 		};
 
 		let mut app = App::new()
 			.insert_resource(Count(0))
 			.add_event::<Evt>()
-			.with_system(emit)
-			.with_system(consume)
+			.add_system(emit)
+			.add_system(consume)
 			.run();
 
 		app.dispatch_update();
 		assert_eq!(count(&app), 5, "first frame");
 		app.dispatch_update();
 		assert_eq!(count(&app), 5, "second frame");
+	}
+
+	#[test]
+	fn update_stages() {
+		#[derive(Default)]
+		struct Calls(Vec<i32>);
+		fn add(w: &mut World, i: i32){
+			w.get_resource_mut::<Calls>().0.push(i);
+		}
+
+		let one = |w: &mut World| add(w, 1);
+		let ten = |w: &mut World| add(w, 10);
+		let hundred = |w: &mut World| add(w, 100);
+
+		let mut app = App::new()
+			.insert_resource(Calls::default())
+			.add_system_to_stage(one, Stage::First)
+			.add_system(hundred)
+			.add_system_to_stage(ten, Stage::PreUpdate)
+			.run();
+		app.dispatch_update();
+
+		assert_eq!(&(app.world.get_resource::<Calls>().0), &[1, 10, 100]);
 	}
 }
