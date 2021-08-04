@@ -1,6 +1,10 @@
-use std::slice::Iter;
+use std::{mem::take, slice::Iter};
 
-use legion::{system, systems::{Builder, Resource, Runnable, Step}};
+use atomic_refcell::AtomicRefMut;
+use legion::{
+	system,
+	systems::{Builder, Resource, Runnable, Step},
+};
 pub use legion::{Resources, Schedule, World};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -22,7 +26,6 @@ pub struct App {
 	pub world: World,
 	pub resources: Resources,
 	schedule: Schedule,
-	
 }
 
 impl App {
@@ -37,6 +40,14 @@ impl App {
 	pub fn dispatch_update(&mut self) {
 		self.schedule.execute(&mut self.world, &mut self.resources);
 	}
+
+	pub fn get_resource<T: 'static>(&mut self) -> AtomicRefMut<T> {
+		self.resources.get_mut::<T>().unwrap()
+	}
+
+	pub fn get_event<T: 'static>(&mut self) -> AtomicRefMut<Event<T>> {
+		self.resources.get_mut::<Event<T>>().unwrap()
+	}
 }
 
 pub struct AppBuilder {
@@ -46,31 +57,30 @@ pub struct AppBuilder {
 }
 
 impl AppBuilder {
-	pub fn add_system(self, s: impl Runnable + 'static) -> Self {
+	pub fn add_system(&mut self, s: impl Runnable + 'static) -> &mut Self {
 		self.add_system_to_stage(s, Stage::Update)
 	}
 
-	pub fn add_system_to_stage(
-		mut self,
-		s: impl Runnable + 'static,
-		stage: Stage,
-	) -> Self {
+	pub fn add_system_to_stage(&mut self, s: impl Runnable + 'static, stage: Stage) -> &mut Self {
 		self.systems.push((Box::new(s), stage));
 		self
 	}
 
-	pub fn set_runner(mut self, r: impl FnOnce(App) + 'static) -> Self {
+	pub fn set_runner(&mut self, r: impl FnOnce(App) + 'static) -> &mut Self {
 		self.runner = Some(Box::new(r));
 		self
 	}
 
-	pub fn run(mut self) -> App {
+	pub fn run(&mut self) -> App {
 		self.systems.sort_by_key(|(_, stage)| *stage);
-		let steps: Vec<Step> = self.systems.into_iter().map(|s| Step::ThreadLocalSystem(s.0)).collect();
+		let steps: Vec<Step> = take(&mut self.systems)
+			.into_iter()
+			.map(|s| Step::ThreadLocalSystem(s.0))
+			.collect();
 
 		let app = App {
 			world: World::default(),
-			resources: self.resources,
+			resources: take(&mut self.resources),
 			schedule: steps.into(),
 		};
 
@@ -87,12 +97,12 @@ impl AppBuilder {
 		self
 	}
 
-	pub fn insert_resource(mut self, r: impl Resource) -> Self {
+	pub fn insert_resource(&mut self, r: impl Resource) -> &mut Self {
 		self.resources.insert(r);
 		self
 	}
 
-	pub fn add_event<T: 'static>(mut self) -> Self {
+	pub fn add_event<T: 'static>(&mut self) -> &mut Self {
 		self.resources.insert(Event::<T>::new());
 		#[system]
 		fn reset<T: 'static>(#[resource] e: &mut Event<T>) {
@@ -189,7 +199,7 @@ mod tests {
 	fn update_stages() {
 		#[derive(Default)]
 		struct Calls(Vec<i32>);
-		
+
 		#[system]
 		fn one(#[resource] c: &mut Calls) {
 			c.0.push(1);

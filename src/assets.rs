@@ -6,7 +6,7 @@ use legion::system;
 pub fn plugin(app: &mut AppBuilder) {}
 
 impl AppBuilder {
-	fn add_asset_type<T: 'static>(self) -> Self {
+	fn add_asset_type<T: 'static>(&mut self) -> &mut Self {
 		self.insert_resource(Assets::<T>::new())
 			.add_event::<AssetEvent<T>>()
 			.add_system_to_stage(update_assets_system::<T>(), Stage::AssetLoad)
