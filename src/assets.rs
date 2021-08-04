@@ -1,20 +1,15 @@
-use std::{
-	collections::HashMap,
-	marker::PhantomData,
-	mem::{swap, take},
-	sync::Arc,
-};
+use std::{collections::HashMap, marker::PhantomData, mem::swap, sync::Arc};
 
 use super::app::*;
-use bevy_hecs::Component;
+use legion::system;
 
-pub fn plugin(app: &mut App) {}
+pub fn plugin(app: &mut AppBuilder) {}
 
-impl App {
-	fn add_asset_type<T: Component>(self) -> Self {
+impl AppBuilder {
+	fn add_asset_type<T: 'static>(self) -> Self {
 		self.insert_resource(Assets::<T>::new())
 			.add_event::<AssetEvent<T>>()
-			.add_system_to_stage(update_assets::<T>, Stage::AssetLoad)
+			.add_system_to_stage(update_assets_system::<T>(), Stage::AssetLoad)
 	}
 }
 
@@ -87,9 +82,15 @@ impl<T> Assets<T> {
 	}
 }
 
-fn update_assets<T: Component>(w: &mut World) {
+#[system]
+fn update_assets<T: 'static>(
+	#[resource] assets: &mut Assets<T>,
+	#[resource] evt: &mut Event<AssetEvent<T>>,
+) {
+	for handle in assets.pending_created_events.drain(..) {
+		evt.emit(AssetEvent::Added(handle));
+	}
 	let dropped = {
-		let mut assets = w.get_resource_mut::<Assets<T>>();
 		let mut dropped = Option::<Vec<Handle<T>>>::None;
 		let mut kept_handles = vec![];
 		for handle in assets.handles.drain(..) {
@@ -107,23 +108,8 @@ fn update_assets<T: Component>(w: &mut World) {
 		dropped
 	};
 	if let Some(handles) = dropped {
-		let mut evt = w.get_event::<AssetEvent<T>>();
 		for handle in handles.into_iter() {
 			evt.emit(AssetEvent::Removed(handle));
-		}
-	}
-	let created: Option<Vec<Handle<T>>> = {
-		let mut assets = w.get_resource_mut::<Assets<T>>();
-		if assets.pending_created_events.len() > 0 {
-			Some(take(&mut assets.pending_created_events))
-		} else {
-			None
-		}
-	};
-	if let Some(handles) = created {
-		let mut evt = w.get_event::<AssetEvent<T>>();
-		for handle in handles.into_iter() {
-			evt.emit(AssetEvent::Added(handle));
 		}
 	}
 }
@@ -131,28 +117,38 @@ fn update_assets<T: Component>(w: &mut World) {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use bevy_hecs::Mut;
+	use atomic_refcell::AtomicRefMut;
 
 	#[derive(Default)]
 	struct IntEvents(Vec<i32>);
 
-	fn read(a: &mut App) -> &[i32] {
-		&a.world.get_resource::<IntEvents>().0
+	fn read(a: &mut App) -> Vec<i32> {
+		a.resources
+			.get::<IntEvents>()
+			.unwrap()
+			.0
+			.iter()
+			.copied()
+			.collect::<Vec<_>>()
 	}
 
-	fn assets(w: &mut World) -> Mut<Assets<i32>> {
-		w.get_resource_mut::<Assets<i32>>()
+	fn assets(a: &mut App) -> AtomicRefMut<Assets<i32>> {
+		a.resources.get_mut::<Assets<i32>>().unwrap()
 	}
 
 	#[test]
 	fn asset_lifecycle() {
 		use super::AssetEvent::*;
-		let log_events = |w: &mut World| {
+		#[system]
+		fn log_events(
+			#[resource] evt: &Event<AssetEvent<i32>>,
+			#[resource] assets: &mut Assets<i32>,
+			#[resource] events: &mut IntEvents,
+		) {
 			let nums = {
-				w.get_resource::<Event<AssetEvent<i32>>>()
-					.iter()
+				evt.iter()
 					.map(|e| {
-						w.get_resource::<Assets<i32>>()
+						assets
 							.get(match e {
 								Added(h) | Removed(h) => &h,
 							})
@@ -163,22 +159,22 @@ mod tests {
 					})
 					.collect::<Vec<_>>()
 			};
-			w.get_resource_mut::<IntEvents>().0.extend(nums);
-		};
+			events.0.extend(nums);
+		}
 
-		let mut app = App::new()
+		let app = &mut App::new()
 			.add_asset_type::<i32>()
 			.insert_resource(IntEvents::default())
-			.add_system_to_stage(log_events, Stage::AssetEvents)
+			.add_system_to_stage(log_events_system(), Stage::AssetEvents)
 			.run();
-		let _one = assets(&mut app.world).create(1);
+		let _one = assets(app).create(1);
 		{
-			let _two = assets(&mut app.world).create(2);
-			let _three = assets(&mut app.world).create(3);
+			let _two = assets(app).create(2);
+			let _three = assets(app).create(3);
 			app.dispatch_update();
-			assert_eq!(read(&mut app), &[1, 2, 3], "frame 1");
+			assert_eq!(read(app), &[1, 2, 3], "frame 1");
 		}
 		app.dispatch_update();
-		assert_eq!(read(&mut app), &[1, 2, 3, -2, -3], "frame 2");
+		assert_eq!(read(app), &[1, 2, 3, -2, -3], "frame 2");
 	}
 }

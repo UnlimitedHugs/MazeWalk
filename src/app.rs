@@ -1,8 +1,7 @@
 use std::slice::Iter;
 
-use bevy_hecs::{Component, Mut};
-
-pub use bevy_hecs::World;
+use legion::{system, systems::{Builder, Resource, Runnable, Step}};
+pub use legion::{Resources, Schedule, World};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum Stage {
@@ -17,40 +16,47 @@ pub enum Stage {
 	Last,
 }
 
+type System = dyn Runnable + 'static;
+
 pub struct App {
 	pub world: World,
-	systems: Vec<Box<dyn FnMut(&mut World)>>,
-	runner: Option<Box<dyn FnOnce(App)>>,
-	pending_systems: Vec<(Box<dyn FnMut(&mut World)>, Stage)>,
+	pub resources: Resources,
+	schedule: Schedule,
+	
 }
 
 impl App {
-	pub fn new() -> Self {
-		Self {
-			world: World::new(),
+	pub fn new() -> AppBuilder {
+		AppBuilder {
+			resources: Resources::default(),
 			systems: vec![],
 			runner: None,
-			pending_systems: vec![],
 		}
 	}
 
-	pub fn add_system(self, s: impl FnMut(&mut World) + 'static) -> Self {
+	pub fn dispatch_update(&mut self) {
+		self.schedule.execute(&mut self.world, &mut self.resources);
+	}
+}
+
+pub struct AppBuilder {
+	resources: Resources,
+	systems: Vec<(Box<System>, Stage)>,
+	runner: Option<Box<dyn FnOnce(App)>>,
+}
+
+impl AppBuilder {
+	pub fn add_system(self, s: impl Runnable + 'static) -> Self {
 		self.add_system_to_stage(s, Stage::Update)
 	}
 
 	pub fn add_system_to_stage(
 		mut self,
-		s: impl FnMut(&mut World) + 'static,
+		s: impl Runnable + 'static,
 		stage: Stage,
 	) -> Self {
-		self.pending_systems.push((Box::new(s), stage));
+		self.systems.push((Box::new(s), stage));
 		self
-	}
-
-	pub fn dispatch_update(&mut self) {
-		for c in self.systems.iter_mut() {
-			(c)(&mut self.world);
-		}
 	}
 
 	pub fn set_runner(mut self, r: impl FnOnce(App) + 'static) -> Self {
@@ -58,33 +64,41 @@ impl App {
 		self
 	}
 
-	pub fn run(mut self) -> Self {
-		self.pending_systems.sort_by_key(|(_, stage)| *stage);
-		self.systems
-			.extend(self.pending_systems.into_iter().map(|(s, _)| s));
-		self.pending_systems = Vec::with_capacity(0);
+	pub fn run(mut self) -> App {
+		self.systems.sort_by_key(|(_, stage)| *stage);
+		let steps: Vec<Step> = self.systems.into_iter().map(|s| Step::ThreadLocalSystem(s.0)).collect();
+
+		let app = App {
+			world: World::default(),
+			resources: self.resources,
+			schedule: steps.into(),
+		};
 
 		if let Some(runner) = self.runner.take() {
-			(runner)(self);
+			(runner)(app);
 			unreachable!();
 		} else {
-			return self;
+			app
 		}
 	}
 
-	pub fn add_plugin(&mut self, p: impl Fn(&mut App) + 'static) -> &mut Self {
+	pub fn add_plugin(&mut self, p: impl Fn(&mut AppBuilder) + 'static) -> &mut Self {
 		(p)(self);
 		self
 	}
 
-	pub fn insert_resource(mut self, r: impl Component) -> Self {
-		self.world.insert_resource(r);
+	pub fn insert_resource(mut self, r: impl Resource) -> Self {
+		self.resources.insert(r);
 		self
 	}
 
-	pub fn add_event<T: Send + Sync + 'static>(mut self) -> Self {
-		self.world.insert_resource(Event::<T>::new());
-		self.add_system_to_stage(|w: &mut World| w.get_event::<T>().clear(), Stage::Last)
+	pub fn add_event<T: 'static>(mut self) -> Self {
+		self.resources.insert(Event::<T>::new());
+		#[system]
+		fn reset<T: 'static>(#[resource] e: &mut Event<T>) {
+			e.clear()
+		}
+		self.add_system_to_stage(reset_system::<T>(), Stage::Last)
 	}
 }
 
@@ -112,57 +126,6 @@ impl<T> Event<T> {
 	}
 }
 
-pub trait WorldExtensions {
-	fn insert_resource<T: Component>(&mut self, r: T) -> &mut Self;
-	fn get_resource<T: Component>(&self) -> &T;
-	fn get_resource_mut<T: Component>(&mut self) -> Mut<T>;
-	fn get_event<T: Component>(&mut self) -> Mut<Event<T>>;
-}
-
-impl WorldExtensions for World {
-	fn insert_resource<T: Component>(&mut self, res: T) -> &mut Self {
-		if let Some(mut r) = self.query_mut::<&mut T>().next() {
-			*r = res;
-		} else {
-			self.spawn((res,));
-		}
-		debug_assert_eq!(
-			self.query_mut::<&mut T>().count(),
-			1,
-			"Duplicate resource {}",
-			std::any::type_name::<T>()
-		);
-		self
-	}
-
-	fn get_resource<T: Component>(&self) -> &T {
-		for r in self.query::<&T>() {
-			return r;
-		}
-		panic_on_resource::<T>();
-		unreachable!();
-	}
-
-	fn get_resource_mut<T: Component>(&mut self) -> Mut<T> {
-		for r in self.query_mut::<&mut T>() {
-			return r;
-		}
-		panic_on_resource::<T>();
-		unreachable!();
-	}
-
-	fn get_event<T: Component>(&mut self) -> Mut<Event<T>> {
-		self.get_resource_mut::<Event<T>>()
-	}
-}
-
-fn panic_on_resource<T>() {
-	#[cfg(debug_assertions)]
-	panic!("Resource not found: {}", std::any::type_name::<T>());
-	#[cfg(not(debug_assertions))]
-	panic!("Resource not found");
-}
-
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -171,22 +134,19 @@ mod tests {
 	struct Count(i32);
 
 	fn count(app: &App) -> i32 {
-		(*app.world.get_resource::<Count>()).0
-	}
-
-	fn increment(w: &mut World, inc: i32) {
-		(*w.get_resource_mut::<Count>()).0 += inc;
+		app.resources.get::<Count>().unwrap().0
 	}
 
 	#[test]
 	fn update_ticks() {
-		let update = |w: &mut World| {
-			increment(w, 1);
-		};
+		#[system]
+		fn increment(#[resource] c: &mut Count) {
+			c.0 += 1;
+		}
 
 		let mut app = App::new()
 			.insert_resource(Count(0))
-			.add_system(update)
+			.add_system(increment_system())
 			.run();
 
 		assert_eq!(count(&app), 0);
@@ -198,24 +158,25 @@ mod tests {
 
 	#[test]
 	fn event_cycle() {
-		let emit = |w: &mut World| {
-			if w.get_resource::<Count>().0 == 0 {
-				w.get_event::<Evt>().emit(Evt(5));
+		#[system]
+		fn emit(#[resource] c: &Count, #[resource] evt: &mut Event<Evt>) {
+			if c.0 == 0 {
+				evt.emit(Evt(5));
 			}
-		};
+		}
 
-		let consume = |w: &mut World| {
-			let evt_value = w.get_event::<Evt>().iter().next().map(|e| e.0);
-			if let Some(val) = evt_value {
-				increment(w, val);
+		#[system]
+		fn consume(#[resource] c: &mut Count, #[resource] evt: &mut Event<Evt>) {
+			if let Some(val) = evt.iter().next().map(|e| e.0) {
+				c.0 += val;
 			}
-		};
+		}
 
 		let mut app = App::new()
 			.insert_resource(Count(0))
 			.add_event::<Evt>()
-			.add_system(emit)
-			.add_system(consume)
+			.add_system(emit_system())
+			.add_system(consume_system())
 			.run();
 
 		app.dispatch_update();
@@ -228,22 +189,28 @@ mod tests {
 	fn update_stages() {
 		#[derive(Default)]
 		struct Calls(Vec<i32>);
-		fn add(w: &mut World, i: i32) {
-			w.get_resource_mut::<Calls>().0.push(i);
+		
+		#[system]
+		fn one(#[resource] c: &mut Calls) {
+			c.0.push(1);
 		}
-
-		let one = |w: &mut World| add(w, 1);
-		let ten = |w: &mut World| add(w, 10);
-		let hundred = |w: &mut World| add(w, 100);
+		#[system]
+		fn ten(#[resource] c: &mut Calls) {
+			c.0.push(10);
+		}
+		#[system]
+		fn hundred(#[resource] c: &mut Calls) {
+			c.0.push(100);
+		}
 
 		let mut app = App::new()
 			.insert_resource(Calls::default())
-			.add_system_to_stage(one, Stage::First)
-			.add_system(hundred)
-			.add_system_to_stage(ten, Stage::PreUpdate)
+			.add_system_to_stage(one_system(), Stage::First)
+			.add_system(hundred_system())
+			.add_system_to_stage(ten_system(), Stage::PreUpdate)
 			.run();
 		app.dispatch_update();
 
-		assert_eq!(&(app.world.get_resource::<Calls>().0), &[1, 10, 100]);
+		assert_eq!(&(app.resources.get::<Calls>().unwrap().0), &[1, 10, 100]);
 	}
 }

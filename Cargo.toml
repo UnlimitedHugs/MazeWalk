@@ -18,5 +18,7 @@ anyhow = "1.0"
 serde = "1.0"
 serde_derive = "1.0"
 serde_yaml = "0.7.5"
+legion = { version = "0.4.0", default-features = false, features = ["codegen"] }
 
-bevy_hecs = {path = "../bevy_hecs"}
+[dev-dependencies]
+atomic_refcell = "0.1.7"

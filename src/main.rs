@@ -3,7 +3,6 @@ mod assets;
 mod miniquad;
 
 use app::App;
-use bevy_hecs::World;
 
 pub fn main() {
 	// App::new()
