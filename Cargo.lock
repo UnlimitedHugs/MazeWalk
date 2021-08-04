@@ -254,6 +254,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_hecs"
+version = "0.3.0"
+
+[[package]]
 name = "bevy_input"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -875,6 +879,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bevy",
+ "bevy_hecs",
  "bevy_miniquad",
  "easer",
  "miniquad",

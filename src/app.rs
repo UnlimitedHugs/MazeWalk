@@ -1,6 +1,8 @@
 use std::slice::Iter;
 
-use bevy_hecs::{Component, Mut, World};
+use bevy_hecs::{Component, Mut};
+
+pub use bevy_hecs::World;
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum Stage {
@@ -61,7 +63,7 @@ impl App {
 		self.systems
 			.extend(self.pending_systems.into_iter().map(|(s, _)| s));
 		self.pending_systems = Vec::with_capacity(0);
-		
+
 		if let Some(runner) = self.runner.take() {
 			(runner)(self);
 			unreachable!();
@@ -226,7 +228,7 @@ mod tests {
 	fn update_stages() {
 		#[derive(Default)]
 		struct Calls(Vec<i32>);
-		fn add(w: &mut World, i: i32){
+		fn add(w: &mut World, i: i32) {
 			w.get_resource_mut::<Calls>().0.push(i);
 		}
 
