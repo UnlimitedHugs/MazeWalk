@@ -1,6 +1,6 @@
 mod app;
 mod assets;
-mod miniquad;
+mod backend;
 
 use app::App;
 

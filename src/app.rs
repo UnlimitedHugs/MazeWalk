@@ -48,6 +48,10 @@ impl App {
 	pub fn get_event<T: 'static>(&mut self) -> AtomicRefMut<Event<T>> {
 		self.resources.get_mut::<Event<T>>().unwrap()
 	}
+
+	pub fn emit_event<T: 'static>(&mut self, value: T) {
+		self.get_event::<T>().emit(value)
+	}
 }
 
 pub struct AppBuilder {

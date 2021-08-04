@@ -19,6 +19,5 @@ serde = "1.0"
 serde_derive = "1.0"
 serde_yaml = "0.7.5"
 legion = { version = "0.4.0", default-features = false, features = ["codegen"] }
-
-[dev-dependencies]
+glam = "0.17.3"
 atomic_refcell = "0.1.7"
