@@ -2,7 +2,7 @@
 // adapted from bevy_render/src/mesh/shape
 
 use crate::rendering::{Mesh, Vertex};
-use bevy::math::{vec2, vec3, Vec2, Vec3};
+use glam::{vec2, vec3, Vec2, Vec3};
 
 #[derive(Debug, Copy, Clone)]
 pub struct Cube {

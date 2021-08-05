@@ -1,10 +1,15 @@
 use std::collections::HashMap;
 
-use crate::{app::*, assets::{AssetEvent, Assets, Handle, HandleId}};
+use crate::{
+	app::*,
+	assets::{AssetEvent, Assets, Handle, HandleId},
+};
 
 use super::draw::ContextResources;
 use legion::system;
-use miniquad::{Context, FilterMode, Texture as ContextTexture, TextureFormat, TextureParams, TextureWrap};
+use miniquad::{
+	Context, FilterMode, Texture as ContextTexture, TextureFormat, TextureParams, TextureWrap,
+};
 use png::{ColorType, Decoder};
 
 pub struct Texture {
@@ -58,7 +63,11 @@ pub fn upload_textures(
 	for evt in texture_events.iter() {
 		if let AssetEvent::Added(handle) = evt {
 			if let Some(tex) = textures.get(handle) {
-				let TextureProperties { wrap, filter, anisotropy } = load_settings
+				let TextureProperties {
+					wrap,
+					filter,
+					anisotropy,
+				} = load_settings
 					.per_asset
 					.get(&handle.id())
 					.unwrap_or_else(|| &load_settings.defaults);

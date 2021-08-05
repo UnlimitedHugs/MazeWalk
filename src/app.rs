@@ -1,12 +1,13 @@
-use std::{mem::take, slice::Iter};
+use std::{iter, mem::take, slice::Iter};
 
 use atomic_refcell::AtomicRefMut;
 use legion::{
 	system,
-	systems::{Builder, Resource, Runnable, Step},
+	systems::{Resource, Runnable, Step},
 };
 pub use legion::{Resources, Schedule, World};
 
+#[allow(dead_code)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum Stage {
 	First,
@@ -18,6 +19,7 @@ pub enum Stage {
 	PreRender,
 	Render,
 	Last,
+	EventReset,
 }
 
 type System = dyn Runnable + 'static;
@@ -33,6 +35,7 @@ impl App {
 		AppBuilder {
 			resources: Resources::default(),
 			systems: vec![],
+			startup_systems: vec![],
 			runner: None,
 		}
 	}
@@ -57,12 +60,18 @@ impl App {
 pub struct AppBuilder {
 	resources: Resources,
 	systems: Vec<(Box<System>, Stage)>,
+	startup_systems: Vec<Box<System>>,
 	runner: Option<Box<dyn FnOnce(App)>>,
 }
 
 impl AppBuilder {
 	pub fn add_system(&mut self, s: impl Runnable + 'static) -> &mut Self {
 		self.add_system_to_stage(s, Stage::Update)
+	}
+
+	pub fn add_startup_system(&mut self, s: impl Runnable + 'static) -> &mut Self {
+		self.startup_systems.push(Box::new(s));
+		self
 	}
 
 	pub fn add_system_to_stage(&mut self, s: impl Runnable + 'static, stage: Stage) -> &mut Self {
@@ -75,24 +84,36 @@ impl AppBuilder {
 		self
 	}
 
-	pub fn run(&mut self) -> App {
+	pub fn build(&mut self) -> App {
+		let mut world = World::default();
+		Into::<Schedule>::into(
+			self.startup_systems
+				.drain(..)
+				.map(|s| Step::ThreadLocalSystem(s))
+				.chain(iter::once(Step::FlushCmdBuffers))
+				.collect::<Vec<_>>(),
+		)
+		.execute(&mut world, &mut self.resources);
+
+		dbg!(world.is_empty());
+
 		self.systems.sort_by_key(|(_, stage)| *stage);
 		let steps: Vec<Step> = take(&mut self.systems)
 			.into_iter()
 			.map(|s| Step::ThreadLocalSystem(s.0))
 			.collect();
 
-		let app = App {
-			world: World::default(),
+		App {
+			world,
 			resources: take(&mut self.resources),
 			schedule: steps.into(),
-		};
+		}
+	}
 
+	pub fn run(&mut self) {
+		let app = self.build();
 		if let Some(runner) = self.runner.take() {
 			(runner)(app);
-			unreachable!();
-		} else {
-			app
 		}
 	}
 
@@ -112,7 +133,7 @@ impl AppBuilder {
 		fn reset<T: 'static>(#[resource] e: &mut Event<T>) {
 			e.clear()
 		}
-		self.add_system_to_stage(reset_system::<T>(), Stage::Last)
+		self.add_system_to_stage(reset_system::<T>(), Stage::EventReset)
 	}
 }
 
@@ -161,7 +182,7 @@ mod tests {
 		let mut app = App::new()
 			.insert_resource(Count(0))
 			.add_system(increment_system())
-			.run();
+			.build();
 
 		assert_eq!(count(&app), 0);
 		app.dispatch_update();
@@ -191,7 +212,7 @@ mod tests {
 			.add_event::<Evt>()
 			.add_system(emit_system())
 			.add_system(consume_system())
-			.run();
+			.build();
 
 		app.dispatch_update();
 		assert_eq!(count(&app), 5, "first frame");
@@ -222,7 +243,7 @@ mod tests {
 			.add_system_to_stage(one_system(), Stage::First)
 			.add_system(hundred_system())
 			.add_system_to_stage(ten_system(), Stage::PreUpdate)
-			.run();
+			.build();
 		app.dispatch_update();
 
 		assert_eq!(&(app.resources.get::<Calls>().unwrap().0), &[1, 10, 100]);

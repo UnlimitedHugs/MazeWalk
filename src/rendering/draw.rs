@@ -1,6 +1,6 @@
-use super::{mesh::Mesh, shader::Shader, texture::Texture, TextureBindings};
+use super::{mesh::Mesh, shader::Shader, TextureBindings};
 use crate::assets::{Handle, HandleId};
-use legion::{Query, storage::Component, system, world::SubWorld};
+use legion::{storage::Component, system, world::SubWorld, Query};
 use miniquad::{Bindings, Buffer, Context, PassAction, Pipeline, Texture as ContextTexture};
 use std::collections::HashMap;
 

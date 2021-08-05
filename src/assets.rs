@@ -1,9 +1,7 @@
-use std::{collections::HashMap, hash::{Hash, Hasher}, marker::PhantomData, mem::swap, sync::Arc};
+use std::{collections::HashMap, marker::PhantomData, mem::swap, sync::Arc};
 
 use super::app::*;
 use legion::system;
-
-pub fn plugin(app: &mut AppBuilder) {}
 
 impl AppBuilder {
 	pub fn add_asset_type<T: 'static>(&mut self) -> &mut Self {
@@ -69,7 +67,7 @@ impl<T> Assets<T> {
 		}
 	}
 
-	pub fn create(&mut self, asset: T) -> Handle<T> {
+	pub fn add(&mut self, asset: T) -> Handle<T> {
 		self.last_id += 1;
 		let id = self.last_id;
 		let handle = Handle::new(id);
@@ -168,11 +166,11 @@ mod tests {
 			.add_asset_type::<i32>()
 			.insert_resource(IntEvents::default())
 			.add_system_to_stage(log_events_system(), Stage::AssetEvents)
-			.run();
-		let _one = assets(app).create(1);
+			.build();
+		let _one = assets(app).add(1);
 		{
-			let _two = assets(app).create(2);
-			let _three = assets(app).create(3);
+			let _two = assets(app).add(2);
+			let _three = assets(app).add(3);
 			app.dispatch_update();
 			assert_eq!(read(app), &[1, 2, 3], "frame 1");
 		}

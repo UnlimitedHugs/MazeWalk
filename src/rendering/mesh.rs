@@ -1,9 +1,12 @@
-use crate::{app::*, assets::{AssetEvent, Assets}};
+use crate::{
+	app::*,
+	assets::{AssetEvent, Assets},
+};
 
 use super::draw::{ContextResources, MeshBufferSet};
 use glam::{Mat4, Vec2, Vec3};
 use legion::system;
-use miniquad::{Context, Buffer, BufferType, VertexAttribute, VertexFormat};
+use miniquad::{Buffer, BufferType, Context, VertexAttribute, VertexFormat};
 
 #[derive(Clone)]
 #[repr(C)]

@@ -1,12 +1,15 @@
 use std::{collections::HashMap, str};
 
-use crate::{app::*, assets::{AssetEvent, Assets, Handle, HandleId}};
+use crate::{
+	app::*,
+	assets::{AssetEvent, Assets, Handle, HandleId},
+};
 
 use super::{draw::ContextResources, mesh::Vertex, RenderSettings};
 use legion::system;
-use miniquad::{Context,
-	BufferLayout, Pipeline, Shader as ContextShader, ShaderMeta,
-	UniformBlockLayout, UniformDesc, UniformType,
+use miniquad::{
+	BufferLayout, Context, Pipeline, Shader as ContextShader, ShaderMeta, UniformBlockLayout,
+	UniformDesc, UniformType,
 };
 
 pub struct Shader {
