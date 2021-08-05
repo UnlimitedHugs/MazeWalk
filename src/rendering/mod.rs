@@ -4,61 +4,29 @@ mod mesh;
 mod shader;
 mod texture;
 
-use std::fmt::Debug;
-
-use bevy_miniquad::Context;
 pub use camera::{Camera, CameraBundle, ProjectionMatrix, ViewMatrix};
+use legion::{storage::Component, system};
 pub use mesh::{Mesh, Vertex};
-use miniquad::PipelineParams;
+use miniquad::{PipelineParams, Context};
 pub use shader::{Shader, ShaderMetaStore};
 pub use texture::{Texture, TextureBindings, TextureLoadSettings, TextureProperties};
+use super::app::*;
 
-use bevy::{asset::AssetStage, ecs::component::Component, prelude::*};
-
-#[derive(Debug, Hash, PartialEq, Eq, Clone, StageLabel)]
-pub enum RenderStage {
-	RenderResource,
-	PreRender,
-	Render,
-}
-
-pub struct RenderingPlugin;
-
-impl Plugin for RenderingPlugin {
-	fn build(&self, app: &mut AppBuilder) {
-		app.add_stage_after(
-			AssetStage::AssetEvents,
-			RenderStage::RenderResource,
-			SystemStage::single_threaded(),
-		);
-		app.add_stage_after(
-			CoreStage::PostUpdate,
-			RenderStage::PreRender,
-			SystemStage::parallel(),
-		);
-		app.add_stage_after(
-			RenderStage::PreRender,
-			RenderStage::Render,
-			SystemStage::single_threaded(),
-		)
-		.add_asset::<Texture>()
-		.add_asset::<Mesh>()
-		.add_asset::<Shader>()
-		.init_resource::<draw::ContextResources>()
-		.init_resource::<texture::TextureLoadSettings>()
-		.init_asset_loader::<texture::PngTextureLoader>()
-		.init_resource::<shader::ShaderMetaStore>()
-		.init_asset_loader::<shader::ShaderLoader>()
-		.add_system(capture_mouse.system())
-		.add_system_set_to_stage(
-			RenderStage::RenderResource,
-			SystemSet::new()
-				.with_system(texture::upload_textures.system())
-				.with_system(mesh::upload_meshes.system())
-				.with_system(shader::upload_shaders.system()),
-		)
-		.add_plugin(camera::CameraPlugin);
-	}
+fn plugin(app: &mut AppBuilder) {
+	app
+	.add_asset_type::<Texture>()
+	.add_asset_type::<Mesh>()
+	.add_asset_type::<Shader>()
+	.insert_resource(draw::ContextResources::default())
+	.insert_resource(texture::TextureLoadSettings::default())
+	//.init_asset_loader::<texture::PngTextureLoader>()
+	//.init_resource::<shader::ShaderMetaStore>()
+	//.init_asset_loader::<shader::ShaderLoader>()
+	.add_system(capture_mouse_system())
+	.add_system_to_stage(texture::upload_textures_system(), Stage::AssetEvents)
+	.add_system_to_stage(mesh::upload_meshes_system(), Stage::AssetEvents)
+	.add_system_to_stage(shader::upload_shaders_system(), Stage::AssetEvents)
+	.add_plugin(camera::plugin);
 }
 
 #[derive(Default)]
@@ -67,16 +35,14 @@ pub struct RenderSettings {
 	pub capture_mouse: bool,
 }
 
-fn capture_mouse(ctx: Res<Context>, settings: Res<RenderSettings>) {
+#[system]
+fn capture_mouse(#[resource] ctx: &Context, #[resource] settings: &RenderSettings) {
 	ctx.set_cursor_grab(settings.capture_mouse);
 	ctx.show_mouse(!settings.capture_mouse);
 }
 
-pub trait AppExtensions {
-	fn register_shader_uniforms<T: Component>(&mut self) -> &mut Self;
-}
-impl AppExtensions for AppBuilder {
+impl AppBuilder {
 	fn register_shader_uniforms<T: Component>(&mut self) -> &mut Self {
-		self.add_system_to_stage(RenderStage::Render, draw::render::<T>.system())
+		self.add_system_to_stage(draw::render_system::<T>(), Stage::Render)
 	}
 }

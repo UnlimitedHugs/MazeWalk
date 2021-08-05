@@ -11,18 +11,17 @@ pub fn plugin(app: &mut AppBuilder) {
 }
 
 // resources
-struct WindowSize(Vec2);
+pub struct WindowSize(Vec2);
 
 // events
-struct WindowResized(Vec2);
-struct MouseMoved(Vec2);
-struct AppExit;
+pub struct WindowResized(Vec2);
+pub struct MouseMoved(Vec2);
+pub struct AppExit;
 
 fn runner(mut app: App) {
 	miniquad::start(conf::Conf::default(), |ctx| {
         app.resources.insert(WindowSize(ctx.screen_size().into()));
 		app.resources.insert(ctx);
-        
 		UserData::free(Stage{
 			app
 		})

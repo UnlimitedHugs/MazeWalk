@@ -1,4 +1,4 @@
-use std::{collections::HashMap, marker::PhantomData, mem::swap, sync::Arc};
+use std::{collections::HashMap, hash::{Hash, Hasher}, marker::PhantomData, mem::swap, sync::Arc};
 
 use super::app::*;
 use legion::system;
@@ -6,7 +6,7 @@ use legion::system;
 pub fn plugin(app: &mut AppBuilder) {}
 
 impl AppBuilder {
-	fn add_asset_type<T: 'static>(&mut self) -> &mut Self {
+	pub fn add_asset_type<T: 'static>(&mut self) -> &mut Self {
 		self.insert_resource(Assets::<T>::new())
 			.add_event::<AssetEvent<T>>()
 			.add_system_to_stage(update_assets_system::<T>(), Stage::AssetLoad)
@@ -19,9 +19,11 @@ pub enum AssetEvent<T> {
 	Removed(Handle<T>),
 }
 
+pub type HandleId = u32;
+
 #[derive(Debug)]
 pub struct Handle<T> {
-	id: Arc<u32>,
+	id: Arc<HandleId>,
 	_p: PhantomData<T>,
 }
 
@@ -50,10 +52,10 @@ impl<T> PartialEq for Handle<T> {
 	}
 }
 
-struct Assets<T> {
+pub struct Assets<T> {
 	handles: Vec<Handle<T>>,
-	values: HashMap<u32, T>,
-	last_id: u32,
+	values: HashMap<HandleId, T>,
+	last_id: HandleId,
 	pending_created_events: Vec<Handle<T>>,
 }
 

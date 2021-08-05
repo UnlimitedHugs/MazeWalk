@@ -1,7 +1,9 @@
+use crate::{app::*, assets::{AssetEvent, Assets}};
+
 use super::draw::{ContextResources, MeshBufferSet};
-use bevy::{prelude::*, reflect::TypeUuid};
-use bevy_miniquad::Context;
-use miniquad::{Buffer, BufferType, VertexAttribute, VertexFormat};
+use glam::{Mat4, Vec2, Vec3};
+use legion::system;
+use miniquad::{Context, Buffer, BufferType, VertexAttribute, VertexFormat};
 
 #[derive(Clone)]
 #[repr(C)]
@@ -29,8 +31,7 @@ impl Vertex {
 	}
 }
 
-#[derive(TypeUuid, Clone)]
-#[uuid = "f8d1bdbe-a1ed-41b0-8e45-668e1dcb9899"]
+#[derive(Clone)]
 pub struct Mesh {
 	pub vertices: Vec<Vertex>,
 	pub indices: Vec<u16>,
@@ -59,27 +60,28 @@ impl Mesh {
 	}
 }
 
+#[system]
 pub fn upload_meshes(
-	meshes: Res<Assets<Mesh>>,
-	mut mesh_events: EventReader<AssetEvent<Mesh>>,
-	mut context: ResMut<Context>,
-	mut context_resources: ResMut<ContextResources>,
+	#[resource] meshes: &mut Assets<Mesh>,
+	#[resource] mesh_events: &Event<AssetEvent<Mesh>>,
+	#[resource] context: &mut Context,
+	#[resource] context_resources: &mut ContextResources,
 ) {
 	for evt in mesh_events.iter() {
-		if let AssetEvent::Created { handle } = evt {
+		if let AssetEvent::Added(handle) = evt {
 			if let Some(mesh) = meshes.get(handle) {
 				let overwritten = context_resources
 					.mesh_buffers
 					.insert(
-						handle.clone(),
+						handle.id(),
 						MeshBufferSet {
 							vertex: Buffer::immutable(
-								&mut context,
+								context,
 								BufferType::VertexBuffer,
 								&mesh.vertices,
 							),
 							index: Buffer::immutable(
-								&mut context,
+								context,
 								BufferType::IndexBuffer,
 								&mesh.indices,
 							),

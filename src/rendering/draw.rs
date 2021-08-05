@@ -1,14 +1,14 @@
 use super::{mesh::Mesh, shader::Shader, texture::Texture, TextureBindings};
-use bevy::ecs::component::Component;
-use bevy::{asset::HandleId, prelude::*, utils::HashMap};
-use bevy_miniquad::Context;
-use miniquad::{Bindings, Buffer, PassAction, Pipeline, Texture as ContextTexture};
+use crate::assets::{Handle, HandleId};
+use legion::{Query, storage::Component, system, world::SubWorld};
+use miniquad::{Bindings, Buffer, Context, PassAction, Pipeline, Texture as ContextTexture};
+use std::collections::HashMap;
 
 #[derive(Default)]
 pub struct ContextResources {
-	pub textures: HashMap<Handle<Texture>, ContextTexture>,
-	pub mesh_buffers: HashMap<Handle<Mesh>, MeshBufferSet>,
-	pub pipelines: HashMap<Handle<Shader>, Pipeline>,
+	pub textures: HashMap<HandleId, ContextTexture>,
+	pub mesh_buffers: HashMap<HandleId, MeshBufferSet>,
+	pub pipelines: HashMap<HandleId, Pipeline>,
 }
 
 pub struct MeshBufferSet {
@@ -16,18 +16,20 @@ pub struct MeshBufferSet {
 	pub index: Buffer,
 }
 
+#[system]
 pub fn render<Uniforms: Component>(
-	mut ctx: ResMut<Context>,
-	resources: Res<ContextResources>,
-	query: Query<(
+	#[resource] ctx: &mut Context,
+	#[resource] resources: &ContextResources,
+	query: &mut Query<(
 		&Handle<Mesh>,
 		&Handle<Shader>,
 		Option<&TextureBindings>,
 		&Uniforms,
 	)>,
+	world: &mut SubWorld,
 ) {
-	let mut grouped_by_shader = query.iter().collect::<Vec<_>>();
-	grouped_by_shader.sort_by(|a, b| a.1.id.cmp(&b.1.id));
+	let mut grouped_by_shader = query.iter(world).collect::<Vec<_>>();
+	grouped_by_shader.sort_by(|a, b| a.1.id().cmp(&b.1.id()));
 
 	ctx.begin_default_pass(PassAction::Clear {
 		color: Some((0.2, 0.2, 0.2, 1.0)),
@@ -37,13 +39,13 @@ pub fn render<Uniforms: Component>(
 	let mut current_shader: Option<HandleId> = None;
 	for (mesh_handle, shader_handle, optional_textures, uniforms) in grouped_by_shader.into_iter() {
 		if let (Some(mesh), Some(pipeline)) = (
-			resources.mesh_buffers.get(mesh_handle),
-			resources.pipelines.get(shader_handle),
+			resources.mesh_buffers.get(&mesh_handle.id()),
+			resources.pipelines.get(&shader_handle.id()),
 		) {
 			let images = if let Some(TextureBindings(bindings)) = optional_textures {
 				let resolved = bindings
 					.iter()
-					.filter_map(|h| resources.textures.get(h))
+					.filter_map(|h| resources.textures.get(&h.id()))
 					.copied()
 					.collect::<Vec<_>>();
 				if resolved.len() < bindings.len() {
@@ -55,8 +57,8 @@ pub fn render<Uniforms: Component>(
 				vec![]
 			};
 
-			if current_shader.is_none() || current_shader != Some(shader_handle.id) {
-				current_shader = Some(shader_handle.id);
+			if current_shader.is_none() || current_shader != Some(shader_handle.id()) {
+				current_shader = Some(shader_handle.id());
 				ctx.apply_pipeline(&pipeline);
 			}
 			ctx.apply_bindings(&Bindings {

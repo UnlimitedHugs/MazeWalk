@@ -1,6 +1,8 @@
 mod app;
 mod assets;
 mod backend;
+mod rendering;
+mod utils;
 
 use app::App;
 
