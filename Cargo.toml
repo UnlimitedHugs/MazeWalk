@@ -1,16 +1,16 @@
 [package]
 name = "maze_walk"
 version = "0.1.0"
-authors = ["UnlimitedHugs <unlimited.hugs@gmail.com>"]
+authors = ["UnlimitedHugs <unlimitedhugs@protonmail.com>"]
 edition = "2018"
 
 [patch."https://github.com/not-fl3/miniquad.git"]
 miniquad = { path = "miniquad" }
 
 [dependencies]
-bevy = { version = "=0.5.0", default-features = false, features = ["dynamic"] }
+legion = { version = "0.4.0", default-features = false, features = ["codegen"] }
+glam = "0.17.3"
 miniquad = { path = "miniquad" }
-bevy_miniquad = { path = "bevy_miniquad" }
 rand = "0.8.4"
 easer = "0.2.1"
 png = "0.16.8"
@@ -18,6 +18,4 @@ anyhow = "1.0"
 serde = "1.0"
 serde_derive = "1.0"
 serde_yaml = "0.7.5"
-legion = { version = "0.4.0", default-features = false, features = ["codegen"] }
-glam = "0.17.3"
 atomic_refcell = "0.1.7"

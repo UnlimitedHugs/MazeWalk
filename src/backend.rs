@@ -1,5 +1,6 @@
+use std::collections::HashSet;
+
 use super::app::{Stage as UpdateStage, *};
-use bevy::utils::HashSet;
 use glam::{vec2, Vec2};
 use legion::system;
 use miniquad::{conf, date, Context, EventHandlerFree, KeyCode, UserData};

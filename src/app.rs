@@ -95,8 +95,6 @@ impl AppBuilder {
 		)
 		.execute(&mut world, &mut self.resources);
 
-		dbg!(world.is_empty());
-
 		self.systems.sort_by_key(|(_, stage)| *stage);
 		let steps: Vec<Step> = take(&mut self.systems)
 			.into_iter()

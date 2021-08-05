@@ -1,8 +1,5 @@
 // adapted from bevy_render/src/color.rs
-use bevy::{
-	core::Bytes,
-	math::{vec3, Vec3, Vec4},
-};
+use glam::{vec3, Vec3, Vec4};
 use colorspace::*;
 use std::ops::{Add, AddAssign, Mul, MulAssign};
 
@@ -979,58 +976,6 @@ impl MulAssign<[f32; 3]> for Color {
 				*lightness *= rhs[2];
 			}
 		}
-	}
-}
-
-impl Bytes for Color {
-	fn write_bytes(&self, buffer: &mut [u8]) {
-		match *self {
-			Color::Rgba {
-				red,
-				green,
-				blue,
-				alpha,
-			} => {
-				red.nonlinear_to_linear_srgb().write_bytes(buffer);
-				green
-					.nonlinear_to_linear_srgb()
-					.write_bytes(&mut buffer[std::mem::size_of::<f32>()..]);
-				blue.nonlinear_to_linear_srgb()
-					.write_bytes(&mut buffer[2 * std::mem::size_of::<f32>()..]);
-				alpha.write_bytes(&mut buffer[3 * std::mem::size_of::<f32>()..]);
-			}
-			Color::RgbaLinear {
-				red,
-				green,
-				blue,
-				alpha,
-			} => {
-				red.write_bytes(buffer);
-				green.write_bytes(&mut buffer[std::mem::size_of::<f32>()..]);
-				blue.write_bytes(&mut buffer[2 * std::mem::size_of::<f32>()..]);
-				alpha.write_bytes(&mut buffer[3 * std::mem::size_of::<f32>()..]);
-			}
-			Color::Hsla {
-				hue,
-				saturation,
-				lightness,
-				alpha,
-			} => {
-				let [red, green, blue] =
-					HslRepresentation::hsl_to_nonlinear_srgb(hue, saturation, lightness);
-				red.nonlinear_to_linear_srgb().write_bytes(buffer);
-				green
-					.nonlinear_to_linear_srgb()
-					.write_bytes(&mut buffer[std::mem::size_of::<f32>()..]);
-				blue.nonlinear_to_linear_srgb()
-					.write_bytes(&mut buffer[std::mem::size_of::<f32>() * 2..]);
-				alpha.write_bytes(&mut buffer[std::mem::size_of::<f32>() * 3..]);
-			}
-		}
-	}
-
-	fn byte_len(&self) -> usize {
-		std::mem::size_of::<f32>() * 4
 	}
 }
 
