@@ -4,8 +4,8 @@ use crate::{
 };
 
 use super::draw::{ContextResources, MeshBufferSet};
+use crate::prelude::*;
 use glam::{Mat4, Vec2, Vec3};
-use legion::system;
 use miniquad::{Buffer, BufferType, Context, VertexAttribute, VertexFormat};
 
 #[derive(Clone)]
@@ -63,12 +63,11 @@ impl Mesh {
 	}
 }
 
-#[system]
 pub fn upload_meshes(
-	#[resource] meshes: &mut Assets<Mesh>,
-	#[resource] mesh_events: &Event<AssetEvent<Mesh>>,
-	#[resource] context: &mut Context,
-	#[resource] context_resources: &mut ContextResources,
+	meshes: Res<Assets<Mesh>>,
+	mut mesh_events: EventReader<AssetEvent<Mesh>>,
+	mut context: ResMut<Context>,
+	mut context_resources: ResMut<ContextResources>,
 ) {
 	for evt in mesh_events.iter() {
 		if let AssetEvent::Added(handle) = evt {
@@ -79,12 +78,12 @@ pub fn upload_meshes(
 						handle.id(),
 						MeshBufferSet {
 							vertex: Buffer::immutable(
-								context,
+								&mut context,
 								BufferType::VertexBuffer,
 								&mesh.vertices,
 							),
 							index: Buffer::immutable(
-								context,
+								&mut context,
 								BufferType::IndexBuffer,
 								&mesh.indices,
 							),

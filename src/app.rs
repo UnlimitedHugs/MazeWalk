@@ -1,15 +1,8 @@
-use std::{iter, mem::take, slice::Iter};
-
-use atomic_refcell::AtomicRefMut;
-use legion::{
-	system,
-	systems::{Resource, Runnable, Step},
-};
-pub use legion::{Resources, Schedule, World};
+use bevy_ecs::{component::Component, prelude::*};
 
 #[allow(dead_code)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
-pub enum Stage {
+pub enum CoreStage {
 	First,
 	AssetLoad,
 	AssetEvents,
@@ -19,63 +12,107 @@ pub enum Stage {
 	PreRender,
 	Render,
 	Last,
-	EventReset,
 }
 
-type System = dyn Runnable + 'static;
+type SysFn = dyn System<In = (), Out = ()>;
 
+#[derive(Default)]
 pub struct App {
 	pub world: World,
-	pub resources: Resources,
-	schedule: Schedule,
+	systems: Vec<Box<SysFn>>,
 }
 
 impl App {
 	pub fn new() -> AppBuilder {
-		AppBuilder {
-			resources: Resources::default(),
-			systems: vec![],
-			startup_systems: vec![],
-			runner: None,
-		}
+		AppBuilder::new()
 	}
 
 	pub fn dispatch_update(&mut self) {
-		self.schedule.execute(&mut self.world, &mut self.resources);
+		Self::run_systems(&mut self.systems, &mut self.world);
+		self.world.check_change_ticks();
+		self.world.clear_trackers();
 	}
 
-	pub fn get_resource<T: 'static>(&mut self) -> AtomicRefMut<T> {
-		self.resources.get_mut::<T>().unwrap()
+	pub fn get_resource<T: Component>(&mut self) -> Mut<T> {
+		self.world.get_resource_mut::<T>().unwrap()
 	}
 
-	pub fn get_event<T: 'static>(&mut self) -> AtomicRefMut<Event<T>> {
-		self.resources.get_mut::<Event<T>>().unwrap()
+	pub fn get_event<T: Component>(&mut self) -> Mut<Events<T>> {
+		self.get_resource::<Events<T>>()
 	}
 
-	pub fn emit_event<T: 'static>(&mut self, value: T) {
-		self.get_event::<T>().emit(value)
+	pub fn emit_event<T: Component>(&mut self, value: T) {
+		self.get_event::<T>().send(value)
+	}
+
+	fn run_systems(systems: &mut [Box<SysFn>], world: &mut World) {
+		for sys in systems.iter_mut() {
+			sys.run((), world);
+			sys.apply_buffers(world);
+		}
 	}
 }
 
 pub struct AppBuilder {
-	resources: Resources,
-	systems: Vec<(Box<System>, Stage)>,
-	startup_systems: Vec<Box<System>>,
+	world: Option<World>,
+	startup_systems: Vec<Box<SysFn>>,
+	systems: Vec<(Box<SysFn>, CoreStage)>,
 	runner: Option<Box<dyn FnOnce(App)>>,
 }
 
 impl AppBuilder {
-	pub fn add_system(&mut self, s: impl Runnable + 'static) -> &mut Self {
-		self.add_system_to_stage(s, Stage::Update)
+	fn new() -> Self {
+		Self {
+			world: Some(Default::default()),
+			startup_systems: Default::default(),
+			systems: Default::default(),
+			runner: None,
+		}
 	}
 
-	pub fn add_startup_system(&mut self, s: impl Runnable + 'static) -> &mut Self {
-		self.startup_systems.push(Box::new(s));
+	pub fn add_system(&mut self, system: impl System<In = (), Out = ()>) -> &mut Self {
+		self.add_system_to_stage(CoreStage::Update, system)
+	}
+
+	pub fn add_system_to_stage(
+		&mut self,
+		stage: CoreStage,
+		system: impl System<In = (), Out = ()>,
+	) -> &mut Self {
+		self.systems.push((Box::new(system), stage));
 		self
 	}
 
-	pub fn add_system_to_stage(&mut self, s: impl Runnable + 'static, stage: Stage) -> &mut Self {
-		self.systems.push((Box::new(s), stage));
+	pub fn add_startup_system(&mut self, system: impl System<In = (), Out = ()>) -> &mut Self {
+		self.startup_systems.push(Box::new(system));
+		self
+	}
+
+	pub fn add_event<T>(&mut self) -> &mut Self
+	where
+		T: Component,
+	{
+		self.insert_resource(Events::<T>::default())
+			.add_system_to_stage(CoreStage::First, Events::<T>::update_system.system())
+	}
+
+	pub fn insert_resource<T>(&mut self, resource: T) -> &mut Self
+	where
+		T: Component,
+	{
+		self.world.as_mut().unwrap().insert_resource(resource);
+		self
+	}
+
+	pub fn init_resource<R>(&mut self) -> &mut Self
+	where
+		R: FromWorld + Send + Sync + 'static,
+	{
+		let world = self.world.as_mut().unwrap();
+		if !world.contains_resource::<R>() {
+			let resource = R::from_world(world);
+			self.insert_resource(resource);
+		}
 		self
 	}
 
@@ -85,27 +122,24 @@ impl AppBuilder {
 	}
 
 	pub fn build(&mut self) -> App {
-		let mut world = World::default();
-		Into::<Schedule>::into(
-			self.startup_systems
-				.drain(..)
-				.map(|s| Step::ThreadLocalSystem(s))
-				.chain(iter::once(Step::FlushCmdBuffers))
-				.collect::<Vec<_>>(),
-		)
-		.execute(&mut world, &mut self.resources);
+		let mut world = self.world.take().unwrap();
+		App::run_systems(
+			&mut self.startup_systems.drain(..).collect::<Vec<_>>(),
+			&mut world,
+		);
+		let systems: Vec<_> = {
+			let mut s = self.systems.drain(..).collect::<Vec<_>>();
+			s.sort_by_key(|(_, stage)| *stage);
+			s.into_iter()
+				.map(|(sys, _)| sys)
+				.map(|mut s| {
+					s.initialize(&mut world);
+					s
+				})
+				.collect()
+		};
 
-		self.systems.sort_by_key(|(_, stage)| *stage);
-		let steps: Vec<Step> = take(&mut self.systems)
-			.into_iter()
-			.map(|s| Step::ThreadLocalSystem(s.0))
-			.collect();
-
-		App {
-			world,
-			resources: take(&mut self.resources),
-			schedule: steps.into(),
-		}
+		App { world, systems }
 	}
 
 	pub fn run(&mut self) {
@@ -119,44 +153,6 @@ impl AppBuilder {
 		(p)(self);
 		self
 	}
-
-	pub fn insert_resource(&mut self, r: impl Resource) -> &mut Self {
-		self.resources.insert(r);
-		self
-	}
-
-	pub fn add_event<T: 'static>(&mut self) -> &mut Self {
-		self.resources.insert(Event::<T>::new());
-		#[system]
-		fn reset<T: 'static>(#[resource] e: &mut Event<T>) {
-			e.clear()
-		}
-		self.add_system_to_stage(reset_system::<T>(), Stage::EventReset)
-	}
-}
-
-pub struct Event<T> {
-	values: Vec<T>,
-}
-
-impl<T> Event<T> {
-	fn new() -> Self {
-		Self {
-			values: Vec::<_>::with_capacity(1),
-		}
-	}
-
-	fn clear(&mut self) {
-		self.values.clear();
-	}
-
-	pub fn emit(&mut self, value: T) {
-		self.values.push(value);
-	}
-
-	pub fn iter(&self) -> Iter<T> {
-		self.values.iter()
-	}
 }
 
 #[cfg(test)]
@@ -164,22 +160,22 @@ mod tests {
 	use super::*;
 
 	struct Evt(i32);
+	#[derive(Debug)]
 	struct Count(i32);
 
 	fn count(app: &App) -> i32 {
-		app.resources.get::<Count>().unwrap().0
+		app.world.get_resource::<Count>().unwrap().0
 	}
 
 	#[test]
 	fn update_ticks() {
-		#[system]
-		fn increment(#[resource] c: &mut Count) {
+		fn increment(mut c: ResMut<Count>) {
 			c.0 += 1;
 		}
 
 		let mut app = App::new()
 			.insert_resource(Count(0))
-			.add_system(increment_system())
+			.add_system(increment.system())
 			.build();
 
 		assert_eq!(count(&app), 0);
@@ -191,15 +187,13 @@ mod tests {
 
 	#[test]
 	fn event_cycle() {
-		#[system]
-		fn emit(#[resource] c: &Count, #[resource] evt: &mut Event<Evt>) {
+		fn emit(c: Res<Count>, mut evt: EventWriter<Evt>) {
 			if c.0 == 0 {
-				evt.emit(Evt(5));
+				evt.send(Evt(5));
 			}
 		}
 
-		#[system]
-		fn consume(#[resource] c: &mut Count, #[resource] evt: &mut Event<Evt>) {
+		fn consume(mut c: ResMut<Count>, mut evt: EventReader<Evt>) {
 			if let Some(val) = evt.iter().next().map(|e| e.0) {
 				c.0 += val;
 			}
@@ -208,8 +202,8 @@ mod tests {
 		let mut app = App::new()
 			.insert_resource(Count(0))
 			.add_event::<Evt>()
-			.add_system(emit_system())
-			.add_system(consume_system())
+			.add_system(emit.system())
+			.add_system(consume.system())
 			.build();
 
 		app.dispatch_update();
@@ -223,27 +217,27 @@ mod tests {
 		#[derive(Default)]
 		struct Calls(Vec<i32>);
 
-		#[system]
-		fn one(#[resource] c: &mut Calls) {
+		fn one(mut c: ResMut<Calls>) {
 			c.0.push(1);
 		}
-		#[system]
-		fn ten(#[resource] c: &mut Calls) {
+		fn ten(mut c: ResMut<Calls>) {
 			c.0.push(10);
 		}
-		#[system]
-		fn hundred(#[resource] c: &mut Calls) {
+		fn hundred(mut c: ResMut<Calls>) {
 			c.0.push(100);
 		}
 
 		let mut app = App::new()
 			.insert_resource(Calls::default())
-			.add_system_to_stage(one_system(), Stage::First)
-			.add_system(hundred_system())
-			.add_system_to_stage(ten_system(), Stage::PreUpdate)
+			.add_system_to_stage(CoreStage::First, one.system())
+			.add_system(hundred.system())
+			.add_system_to_stage(CoreStage::PreUpdate, ten.system())
 			.build();
 		app.dispatch_update();
 
-		assert_eq!(&(app.resources.get::<Calls>().unwrap().0), &[1, 10, 100]);
+		assert_eq!(
+			&(app.world.get_resource::<Calls>().unwrap().0),
+			&[1, 10, 100]
+		);
 	}
 }

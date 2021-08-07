@@ -1,15 +1,10 @@
 use std::{collections::HashMap, str};
 
-use crate::{
-	app::*,
-	assets::{AssetEvent, Assets, Handle, HandleId},
-};
-
 use super::{draw::ContextResources, mesh::Vertex, RenderSettings};
-use legion::system;
+use crate::prelude::*;
 use miniquad::{
-	BufferLayout, Context, Pipeline, Shader as ContextShader, ShaderMeta, UniformBlockLayout,
-	UniformDesc, UniformType,
+	BufferLayout, Context, Pipeline, PipelineParams, Shader as ContextShader, ShaderMeta,
+	UniformBlockLayout, UniformDesc, UniformType,
 };
 
 pub struct Shader {
@@ -68,19 +63,18 @@ impl From<&ShaderMetadata> for ShaderMeta {
 	}
 }
 
-#[system]
 pub fn upload_shaders(
-	#[resource] shaders: &mut Assets<Shader>,
-	#[resource] shader_events: &Event<AssetEvent<Shader>>,
-	#[resource] context: &mut Context,
-	#[resource] context_resources: &mut ContextResources,
-	#[resource] settings: &RenderSettings,
-	#[resource] meta_store: &ShaderMetaStore,
+	shaders: Res<Assets<Shader>>,
+	mut shader_events: EventReader<AssetEvent<Shader>>,
+	mut context: ResMut<Context>,
+	mut context_resources: ResMut<ContextResources>,
+	settings: Option<Res<RenderSettings>>,
+	meta_store: Res<ShaderMetaStore>,
 ) {
 	let mut register_shader = |handle: &Handle<Shader>, ctx: &mut ContextResources| {
 		let shader = shaders.get(handle).expect("resolve shader asset");
 		let shader = ContextShader::new(
-			context,
+			&mut context,
 			&shader.vertex,
 			&shader.fragment,
 			meta_store
@@ -89,6 +83,10 @@ pub fn upload_shaders(
 				.unwrap_or_else(|| panic!("shader requires metadata: {:?}", handle.id()))
 				.into(),
 		);
+		let pipeline_params = match settings {
+			Some(ref res) => PipelineParams { ..res.pipeline },
+			None => Default::default(),
+		};
 		match shader {
 			Ok(shader) => {
 				let overwritten = ctx
@@ -96,11 +94,11 @@ pub fn upload_shaders(
 					.insert(
 						handle.id(),
 						Pipeline::with_params(
-							context,
+							&mut context,
 							&[BufferLayout::default()],
 							&Vertex::attributes(),
 							shader,
-							settings.pipeline,
+							pipeline_params,
 						),
 					)
 					.is_some();
@@ -117,8 +115,8 @@ pub fn upload_shaders(
 
 	for evt in shader_events.iter() {
 		match evt {
-			AssetEvent::Added(handle) => register_shader(handle, context_resources),
-			AssetEvent::Removed(handle) => discard_shader(handle, context_resources),
+			AssetEvent::Added(handle) => register_shader(handle, &mut context_resources),
+			AssetEvent::Removed(handle) => discard_shader(handle, &mut context_resources),
 		}
 	}
 }

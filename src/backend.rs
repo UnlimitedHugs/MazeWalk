@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
-use super::app::{Stage as UpdateStage, *};
+use super::app::*;
+use bevy_ecs::prelude::*;
 use glam::{vec2, Vec2};
-use legion::system;
 use miniquad::{conf, date, Context, EventHandlerFree, KeyCode, UserData};
 
 pub fn plugin(app: &mut AppBuilder) {
@@ -10,7 +10,7 @@ pub fn plugin(app: &mut AppBuilder) {
 		.add_event::<WindowResized>()
 		.add_event::<MouseMoved>()
 		.add_event::<AppExit>()
-		.add_system_to_stage(handle_exit_event_system(), UpdateStage::Last);
+		.add_system_to_stage(CoreStage::Last, handle_exit_event.system());
 }
 
 // resources
@@ -49,10 +49,10 @@ pub struct AppExit;
 
 fn runner(mut app: App) {
 	miniquad::start(conf::Conf::default(), |ctx| {
-		app.resources.insert(WindowSize(ctx.screen_size().into()));
-		app.resources.insert(ctx);
-		app.resources.insert(Keyboard::default());
-		app.resources.insert(Time {
+		app.world.insert_resource(WindowSize(ctx.screen_size().into()));
+		app.world.insert_resource(ctx);
+		app.world.insert_resource(Keyboard::default());
+		app.world.insert_resource(Time {
 			startup_time: date::now(),
 			..Default::default()
 		});
@@ -132,8 +132,7 @@ impl Keyboard {
 	}
 }
 
-#[system]
-fn handle_exit_event(#[resource] evt: &mut Event<AppExit>, #[resource] context: &Context) {
+fn handle_exit_event(mut evt: EventReader<AppExit>, context: Res<Context>) {
 	if evt.iter().next().is_some() {
 		context.request_quit();
 	}

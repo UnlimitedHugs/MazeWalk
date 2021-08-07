@@ -1,12 +1,7 @@
 use std::collections::HashMap;
 
-use crate::{
-	app::*,
-	assets::{AssetEvent, Assets, Handle, HandleId},
-};
-
 use super::draw::ContextResources;
-use legion::system;
+use crate::prelude::*;
 use miniquad::{
 	Context, FilterMode, Texture as ContextTexture, TextureFormat, TextureParams, TextureWrap,
 };
@@ -52,13 +47,12 @@ impl Default for TextureProperties {
 	}
 }
 
-#[system]
 pub fn upload_textures(
-	#[resource] textures: &mut Assets<Texture>,
-	#[resource] texture_events: &Event<AssetEvent<Texture>>,
-	#[resource] context: &mut Context,
-	#[resource] context_resources: &mut ContextResources,
-	#[resource] load_settings: &TextureLoadSettings,
+	textures: Res<Assets<Texture>>,
+	mut texture_events: EventReader<AssetEvent<Texture>>,
+	mut context: ResMut<Context>,
+	mut context_resources: ResMut<ContextResources>,
+	load_settings: Res<TextureLoadSettings>,
 ) {
 	for evt in texture_events.iter() {
 		if let AssetEvent::Added(handle) = evt {
@@ -76,7 +70,7 @@ pub fn upload_textures(
 					.insert(
 						handle.id(),
 						ContextTexture::from_data_and_format(
-							context,
+							&mut context,
 							&tex.data,
 							TextureParams {
 								format: tex.format,

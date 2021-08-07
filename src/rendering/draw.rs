@@ -1,6 +1,6 @@
 use super::{mesh::Mesh, shader::Shader, TextureBindings};
-use crate::assets::{Handle, HandleId};
-use legion::{storage::Component, system, world::SubWorld, Query};
+use crate::prelude::*;
+use bevy_ecs::component::Component;
 use miniquad::{Bindings, Buffer, Context, PassAction, Pipeline, Texture as ContextTexture};
 use std::collections::HashMap;
 
@@ -16,19 +16,17 @@ pub struct MeshBufferSet {
 	pub index: Buffer,
 }
 
-#[system]
 pub fn render<Uniforms: Component>(
-	#[resource] ctx: &mut Context,
-	#[resource] resources: &ContextResources,
-	query: &mut Query<(
+	mut ctx: ResMut<Context>,
+	resources: Res<ContextResources>,
+	query: Query<(
 		&Handle<Mesh>,
 		&Handle<Shader>,
 		Option<&TextureBindings>,
 		&Uniforms,
 	)>,
-	world: &mut SubWorld,
 ) {
-	let mut grouped_by_shader = query.iter(world).collect::<Vec<_>>();
+	let mut grouped_by_shader = query.iter().collect::<Vec<_>>();
 	grouped_by_shader.sort_by(|a, b| a.1.id().cmp(&b.1.id()));
 
 	ctx.begin_default_pass(PassAction::Clear {

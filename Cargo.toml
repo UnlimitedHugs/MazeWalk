@@ -8,7 +8,7 @@ edition = "2018"
 miniquad = { path = "miniquad" }
 
 [dependencies]
-legion = { version = "0.4.0", default-features = false, features = ["codegen"] }
+bevy_ecs = { path = "../bevy_ecs" }
 glam = "0.17.3"
 miniquad = { path = "miniquad" }
 rand = "0.8.4"
@@ -18,4 +18,3 @@ anyhow = "1.0"
 serde = "1.0"
 serde_derive = "1.0"
 serde_yaml = "0.7.5"
-atomic_refcell = "0.1.7"

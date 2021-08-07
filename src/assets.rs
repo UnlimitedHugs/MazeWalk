@@ -1,13 +1,13 @@
+use bevy_ecs::component::Component;
 use std::{collections::HashMap, marker::PhantomData, mem::swap, sync::Arc};
 
-use super::app::*;
-use legion::system;
+use crate::prelude::*;
 
 impl AppBuilder {
-	pub fn add_asset_type<T: 'static>(&mut self) -> &mut Self {
+	pub fn add_asset_type<T: Component>(&mut self) -> &mut Self {
 		self.insert_resource(Assets::<T>::new())
 			.add_event::<AssetEvent<T>>()
-			.add_system_to_stage(update_assets_system::<T>(), Stage::AssetLoad)
+			.add_system_to_stage(CoreStage::AssetLoad, update_assets::<T>.system())
 	}
 }
 
@@ -82,19 +82,15 @@ impl<T> Assets<T> {
 	}
 }
 
-#[system]
-fn update_assets<T: 'static>(
-	#[resource] assets: &mut Assets<T>,
-	#[resource] evt: &mut Event<AssetEvent<T>>,
-) {
+fn update_assets<T: Component>(mut assets: ResMut<Assets<T>>, mut evt: EventWriter<AssetEvent<T>>) {
 	for handle in assets.pending_created_events.drain(..) {
-		evt.emit(AssetEvent::Added(handle));
+		evt.send(AssetEvent::Added(handle));
 	}
 	let dropped = {
 		let mut dropped = Option::<Vec<Handle<T>>>::None;
 		let mut kept_handles = vec![];
 		for handle in assets.handles.drain(..) {
-			if Arc::strong_count(&handle.id) <= 1 {
+			if Arc::strong_count(&handle.id) <= 2 {
 				dropped = Some({
 					let mut v = dropped.unwrap_or_else(|| vec![]);
 					v.push(handle);
@@ -109,7 +105,7 @@ fn update_assets<T: 'static>(
 	};
 	if let Some(handles) = dropped {
 		for handle in handles.into_iter() {
-			evt.emit(AssetEvent::Removed(handle));
+			evt.send(AssetEvent::Removed(handle));
 		}
 	}
 }
@@ -117,14 +113,13 @@ fn update_assets<T: 'static>(
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use atomic_refcell::AtomicRefMut;
 
 	#[derive(Default)]
 	struct IntEvents(Vec<i32>);
 
 	fn read(a: &mut App) -> Vec<i32> {
-		a.resources
-			.get::<IntEvents>()
+		a.world
+			.get_resource::<IntEvents>()
 			.unwrap()
 			.0
 			.iter()
@@ -132,18 +127,17 @@ mod tests {
 			.collect::<Vec<_>>()
 	}
 
-	fn assets(a: &mut App) -> AtomicRefMut<Assets<i32>> {
-		a.resources.get_mut::<Assets<i32>>().unwrap()
+	fn assets(a: &mut App) -> Mut<Assets<i32>> {
+		a.world.get_resource_mut::<Assets<i32>>().unwrap()
 	}
 
 	#[test]
 	fn asset_lifecycle() {
 		use super::AssetEvent::*;
-		#[system]
 		fn log_events(
-			#[resource] evt: &Event<AssetEvent<i32>>,
-			#[resource] assets: &mut Assets<i32>,
-			#[resource] events: &mut IntEvents,
+			mut evt: EventReader<AssetEvent<i32>>,
+			assets: ResMut<Assets<i32>>,
+			mut events: ResMut<IntEvents>,
 		) {
 			let nums = {
 				evt.iter()
@@ -165,7 +159,7 @@ mod tests {
 		let app = &mut App::new()
 			.add_asset_type::<i32>()
 			.insert_resource(IntEvents::default())
-			.add_system_to_stage(log_events_system(), Stage::AssetEvents)
+			.add_system_to_stage(CoreStage::AssetEvents, log_events.system())
 			.build();
 		let _one = assets(app).add(1);
 		{

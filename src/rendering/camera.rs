@@ -1,4 +1,5 @@
-use crate::{app::*, backend::WindowResized, utils::GlobalTransform};
+use crate::prelude::*;
+use crate::utils::GlobalTransform;
 use glam::{Mat4, Vec3};
 use std::ops::Range;
 
