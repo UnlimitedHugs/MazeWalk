@@ -1,6 +1,7 @@
 mod app;
 mod assets;
 mod backend;
+mod cubes_demo;
 mod rendering;
 mod utils;
 
@@ -8,7 +9,7 @@ use miniquad::KeyCode;
 use prelude::*;
 
 mod prelude {
-	pub use crate::{app::*, backend::*, assets::*, rendering::*, utils::*};
+	pub use crate::{app::*, assets::*, backend::*, rendering::*, utils::*};
 	pub use bevy_ecs::prelude::*;
 }
 
@@ -16,6 +17,7 @@ pub fn main() {
 	App::new()
 		.add_plugin(backend::plugin)
 		.add_plugin(rendering::plugin)
+		.add_plugin(cubes_demo::plugin)
 		.add_system(quit_on_esc.system())
 		.run();
 }

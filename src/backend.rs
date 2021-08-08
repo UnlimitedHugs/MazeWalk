@@ -2,32 +2,40 @@ use std::collections::HashSet;
 
 use super::app::*;
 use bevy_ecs::prelude::*;
-use glam::{vec2, Vec2};
 use miniquad::{conf, date, Context, EventHandlerFree, KeyCode, UserData};
 
 pub fn plugin(app: &mut AppBuilder) {
 	app.set_runner(runner)
-		.add_event::<WindowResized>()
-		.add_event::<MouseMoved>()
+		.add_event::<WindowResize>()
+		.add_event::<MouseMove>()
+		.add_event::<MouseScroll>()
 		.add_event::<AppExit>()
 		.add_system_to_stage(CoreStage::Last, handle_exit_event.system());
 }
 
 // resources
-pub struct WindowSize(Vec2);
+pub struct WindowSize {
+	pub width: f32,
+	pub height: f32,
+}
+impl WindowSize {
+	fn new((width, height): (f32, f32)) -> Self {
+		Self { width, height }
+	}
+}
 
 #[derive(Default)]
 pub struct Time {
 	startup_time: f64,
 	last_update_time: Option<f64>,
 	now: f64,
-	delta: f64,
+	delta: f32,
 }
 impl Time {
 	pub fn seconds_since_startup(&self) -> f64 {
 		self.now - self.startup_time
 	}
-	pub fn delta_seconds(&self) -> f64 {
+	pub fn delta_seconds(&self) -> f32 {
 		self.delta
 	}
 	fn update(s: &mut Stage) {
@@ -36,20 +44,30 @@ impl Time {
 		t.now = now;
 		t.delta = t
 			.last_update_time
-			.map(|last| (now - last).max(0.))
+			.map(|last| (now - last).max(0.) as f32)
 			.unwrap_or_default();
 		t.last_update_time = Some(now);
 	}
 }
 
 // events
-pub struct WindowResized(Vec2);
-pub struct MouseMoved(Vec2);
+pub struct WindowResize {
+	pub width: f32,
+	pub height: f32,
+}
+pub struct MouseMove {
+	pub dx: f32,
+	pub dy: f32,
+}
+pub struct MouseScroll {
+	pub delta: f32,
+}
 pub struct AppExit;
 
 fn runner(mut app: App) {
 	miniquad::start(conf::Conf::default(), |ctx| {
-		app.world.insert_resource(WindowSize(ctx.screen_size().into()));
+		app.world
+			.insert_resource(WindowSize::new(ctx.screen_size()));
 		app.world.insert_resource(ctx);
 		app.world.insert_resource(Keyboard::default());
 		app.world.insert_resource(Time {
@@ -72,9 +90,8 @@ impl EventHandlerFree for Stage {
 	}
 
 	fn resize_event(&mut self, width: f32, height: f32) {
-		let size = vec2(width, height);
-		self.app.get_resource::<WindowSize>().0 = size;
-		self.app.emit_event(WindowResized(size));
+		*self.app.get_resource::<WindowSize>() = WindowSize { width, height };
+		self.app.emit_event(WindowResize { width, height });
 	}
 
 	fn key_down_event(
@@ -97,7 +114,11 @@ impl EventHandlerFree for Stage {
 	}
 
 	fn raw_mouse_motion(&mut self, dx: f32, dy: f32) {
-		self.app.emit_event(MouseMoved(vec2(dx, dy)));
+		self.app.emit_event(MouseMove { dx, dy });
+	}
+
+	fn mouse_wheel_event(&mut self, _x: f32, delta: f32) {
+		self.app.emit_event(MouseScroll { delta });
 	}
 
 	fn draw(&mut self) {}
