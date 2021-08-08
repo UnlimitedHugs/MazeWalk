@@ -122,9 +122,18 @@ impl AppBuilder {
 	}
 
 	pub fn build(&mut self) -> App {
+		let init_system = |mut sys: Box<SysFn>, w: &mut World| {
+			sys.initialize(w);
+			sys
+		};
+
 		let mut world = self.world.take().unwrap();
 		App::run_systems(
-			&mut self.startup_systems.drain(..).collect::<Vec<_>>(),
+			&mut self
+				.startup_systems
+				.drain(..)
+				.map(|s| init_system(s, &mut world))
+				.collect::<Vec<_>>(),
 			&mut world,
 		);
 		let systems: Vec<_> = {
@@ -132,10 +141,7 @@ impl AppBuilder {
 			s.sort_by_key(|(_, stage)| *stage);
 			s.into_iter()
 				.map(|(sys, _)| sys)
-				.map(|mut s| {
-					s.initialize(&mut world);
-					s
-				})
+				.map(|s| init_system(s, &mut world))
 				.collect()
 		};
 
