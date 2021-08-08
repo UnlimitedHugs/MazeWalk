@@ -90,7 +90,7 @@ fn update_assets<T: Component>(mut assets: ResMut<Assets<T>>, mut evt: EventWrit
 		let mut dropped = Option::<Vec<Handle<T>>>::None;
 		let mut kept_handles = vec![];
 		for handle in assets.handles.drain(..) {
-			if Arc::strong_count(&handle.id) <= 2 {
+			if Arc::strong_count(&handle.id) <= 1 {
 				dropped = Some({
 					let mut v = dropped.unwrap_or_else(|| vec![]);
 					v.push(handle);
@@ -168,6 +168,7 @@ mod tests {
 			app.dispatch_update();
 			assert_eq!(read(app), &[1, 2, 3], "frame 1");
 		}
+		app.dispatch_update();
 		app.dispatch_update();
 		assert_eq!(read(app), &[1, 2, 3, -2, -3], "frame 2");
 	}
