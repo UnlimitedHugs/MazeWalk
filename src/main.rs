@@ -1,7 +1,6 @@
 mod app;
 mod assets;
 mod backend;
-mod cubes_demo;
 mod rendering;
 mod utils;
 
@@ -17,7 +16,6 @@ pub fn main() {
 	App::new()
 		.add_plugin(backend::plugin)
 		.add_plugin(rendering::plugin)
-		.add_plugin(cubes_demo::plugin)
 		.add_system(quit_on_esc.system())
 		.run();
 }
