@@ -8,7 +8,7 @@ use miniquad::KeyCode;
 use prelude::*;
 
 mod prelude {
-	pub use crate::{app::*, assets::*, backend::*, rendering::*, utils::*};
+	pub use crate::{app::*, assets::*, backend::*, rendering::*};
 	pub use bevy_ecs::prelude::*;
 }
 

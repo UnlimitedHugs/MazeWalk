@@ -54,7 +54,7 @@ impl App {
 }
 
 pub struct AppBuilder {
-	world: Option<World>,
+	pub world: Option<World>,
 	startup_systems: Vec<Box<SysFn>>,
 	systems: Vec<(Box<SysFn>, CoreStage)>,
 	runner: Option<Box<dyn FnOnce(App)>>,
