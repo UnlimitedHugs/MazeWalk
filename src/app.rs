@@ -1,6 +1,5 @@
 use bevy_ecs::{component::Component, prelude::*};
 
-#[allow(dead_code)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum CoreStage {
 	First,
@@ -14,12 +13,56 @@ pub enum CoreStage {
 	Last,
 }
 
-type SysFn = dyn System<In = (), Out = ()>;
+#[derive(PartialEq, Clone, Copy, Debug)]
+pub enum AppState {
+	Preload,
+	Play,
+}
+
+impl Default for AppState {
+	fn default() -> Self {
+		AppState::Preload
+	}
+}
+
+struct AppSystem {
+	system: Box<dyn System<In = (), Out = ()>>,
+	stage: CoreStage,
+	state: Option<AppState>,
+}
+
+impl AppSystem {
+	fn new(
+		mut system: impl System<In = (), Out = ()>,
+		mut world: &mut World,
+		stage: CoreStage,
+		state: Option<AppState>,
+	) -> Self {
+		system.initialize(&mut world);
+		Self {
+			system: Box::new(system),
+			stage,
+			state,
+		}
+	}
+}
+
+#[derive(PartialEq)]
+enum StateTransitionType {
+	Enter,
+	Exit,
+}
+
+struct StateListener {
+	system: AppSystem,
+	transition: StateTransitionType,
+}
 
 #[derive(Default)]
 pub struct App {
 	pub world: World,
-	systems: Vec<Box<SysFn>>,
+	systems: Vec<AppSystem>,
+	state_listeners: Vec<StateListener>,
 }
 
 impl App {
@@ -28,9 +71,11 @@ impl App {
 	}
 
 	pub fn dispatch_update(&mut self) {
-		Self::run_systems(&mut self.systems, &mut self.world);
+		let current_state = self.get_state().current;
+		Self::run_systems(&mut self.systems, &mut self.world, Some(current_state));
 		self.world.check_change_ticks();
 		self.world.clear_trackers();
+		self.apply_state_transition();
 	}
 
 	pub fn get_resource<T: Component>(&mut self) -> Mut<T> {
@@ -45,19 +90,53 @@ impl App {
 		self.get_event::<T>().send(value)
 	}
 
-	fn run_systems(systems: &mut [Box<SysFn>], world: &mut World) {
+	fn run_systems(systems: &mut [AppSystem], world: &mut World, current_state: Option<AppState>) {
+		let mut pending_buffers = vec![];
 		for sys in systems.iter_mut() {
-			sys.run((), world);
-			sys.apply_buffers(world);
+			if sys.state.is_some() && sys.state != current_state {
+				continue;
+			}
+			sys.system.run((), world);
+			pending_buffers.push(sys);
+		}
+		for sys in pending_buffers.into_iter() {
+			sys.system.apply_buffers(world);
+		}
+	}
+
+	fn get_state(&mut self) -> Mut<State> {
+		self.world.get_resource_mut::<State>().unwrap()
+	}
+
+	fn apply_state_transition(&mut self) {
+		let State { current, pending } = *self.get_state();
+		if let Some(next) = pending {
+			self.call_state_listeners(current, StateTransitionType::Exit);
+			self.get_state().current = next;
+			self.call_state_listeners(next, StateTransitionType::Enter);
+		}
+	}
+
+	fn call_state_listeners(&mut self, state: AppState, transition: StateTransitionType) {
+		for listener in self.state_listeners.iter_mut() {
+			let StateListener {
+				system,
+				transition: system_transition,
+			} = listener;
+			if system.state == Some(state) && *system_transition == transition {
+				system.system.run((), &mut self.world);
+				system.system.apply_buffers(&mut self.world);
+			}
 		}
 	}
 }
 
 pub struct AppBuilder {
 	pub world: Option<World>,
-	startup_systems: Vec<Box<SysFn>>,
-	systems: Vec<(Box<SysFn>, CoreStage)>,
+	startup_systems: Vec<AppSystem>,
+	systems: Vec<AppSystem>,
 	runner: Option<Box<dyn FnOnce(App)>>,
+	state_listeners: Vec<StateListener>,
 }
 
 impl AppBuilder {
@@ -67,6 +146,7 @@ impl AppBuilder {
 			startup_systems: Default::default(),
 			systems: Default::default(),
 			runner: None,
+			state_listeners: Default::default(),
 		}
 	}
 
@@ -79,13 +159,56 @@ impl AppBuilder {
 		stage: CoreStage,
 		system: impl System<In = (), Out = ()>,
 	) -> &mut Self {
-		self.systems.push((Box::new(system), stage));
+		let s = AppSystem::new(system, self.world(), stage, None);
+		self.systems.push(s);
 		self
 	}
 
 	pub fn add_startup_system(&mut self, system: impl System<In = (), Out = ()>) -> &mut Self {
-		self.startup_systems.push(Box::new(system));
+		let s = AppSystem::new(system, self.world(), CoreStage::First, None);
+		self.startup_systems.push(s);
 		self
+	}
+
+	pub fn add_system_stateful(
+		&mut self,
+		state: AppState,
+		system: impl System<In = (), Out = ()>,
+	) -> &mut Self {
+		let s = AppSystem::new(system, self.world(), CoreStage::Update, Some(state));
+		self.systems.push(s);
+		self
+	}
+
+	pub fn on_enter_state(
+		&mut self,
+		state: AppState,
+		system: impl System<In = (), Out = ()>,
+	) -> &mut Self {
+		self.add_state_listener(state, StateTransitionType::Enter, system);
+		self
+	}
+
+	pub fn on_exit_state(
+		&mut self,
+		state: AppState,
+		system: impl System<In = (), Out = ()>,
+	) -> &mut Self {
+		self.add_state_listener(state, StateTransitionType::Exit, system);
+		self
+	}
+
+	fn add_state_listener(
+		&mut self,
+		state: AppState,
+		transition: StateTransitionType,
+		system: impl System<In = (), Out = ()>,
+	) {
+		let listener = StateListener {
+			system: AppSystem::new(system, self.world(), CoreStage::Last, Some(state)),
+			transition,
+		};
+		self.state_listeners.push(listener);
 	}
 
 	pub fn add_event<T>(&mut self) -> &mut Self
@@ -100,7 +223,7 @@ impl AppBuilder {
 	where
 		T: Component,
 	{
-		self.world.as_mut().unwrap().insert_resource(resource);
+		self.world().insert_resource(resource);
 		self
 	}
 
@@ -108,7 +231,7 @@ impl AppBuilder {
 	where
 		R: FromWorld + Send + Sync + 'static,
 	{
-		let world = self.world.as_mut().unwrap();
+		let world = self.world();
 		if !world.contains_resource::<R>() {
 			let resource = R::from_world(world);
 			self.insert_resource(resource);
@@ -122,30 +245,31 @@ impl AppBuilder {
 	}
 
 	pub fn build(&mut self) -> App {
-		let init_system = |mut sys: Box<SysFn>, w: &mut World| {
-			sys.initialize(w);
-			sys
-		};
-
 		let mut world = self.world.take().unwrap();
+		let state = State::default();
+		let current_state = state.current;
+		world.insert_resource(state);
 		App::run_systems(
-			&mut self
-				.startup_systems
-				.drain(..)
-				.map(|s| init_system(s, &mut world))
-				.collect::<Vec<_>>(),
+			&mut self.startup_systems.drain(..).collect::<Vec<_>>(),
 			&mut world,
+			None,
 		);
+
 		let systems: Vec<_> = {
-			let mut s = self.systems.drain(..).collect::<Vec<_>>();
-			s.sort_by_key(|(_, stage)| *stage);
-			s.into_iter()
-				.map(|(sys, _)| sys)
-				.map(|s| init_system(s, &mut world))
-				.collect()
+			self.systems.sort_by_key(|sys| sys.stage);
+			self.systems.drain(..).collect::<Vec<_>>()
 		};
 
-		App { world, systems }
+		let state_listeners = self.state_listeners.drain(..).collect::<Vec<_>>();
+
+		let mut app = App {
+			world,
+			systems,
+			state_listeners,
+		};
+
+		app.call_state_listeners(current_state, StateTransitionType::Enter);
+		app
 	}
 
 	pub fn run(&mut self) {
@@ -159,11 +283,32 @@ impl AppBuilder {
 		(p)(self);
 		self
 	}
+
+	pub fn world(&mut self) -> &mut World {
+		self.world.as_mut().unwrap()
+	}
+}
+
+#[derive(Default)]
+struct State {
+	current: AppState,
+	pending: Option<AppState>,
+}
+
+impl State {
+	pub fn get_current(&self) -> AppState {
+		self.current
+	}
+
+	pub fn schedule_transition(&mut self, new_state: AppState) {
+		self.pending = Some(new_state);
+	}
 }
 
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use bevy_ecs::system::BoxedSystem;
 
 	struct Evt(i32);
 	#[derive(Debug)]
@@ -244,6 +389,78 @@ mod tests {
 		assert_eq!(
 			&(app.world.get_resource::<Calls>().unwrap().0),
 			&[1, 10, 100]
+		);
+	}
+
+	#[test]
+	fn state_transition() {
+		use super::State;
+		use {AppState::*, CallType::*};
+
+		#[derive(Default)]
+		struct Calls(Vec<CallType>);
+		#[derive(Clone, Copy, PartialEq, Debug)]
+		enum CallType {
+			Startup,
+			UpdateState(AppState),
+			Update,
+			Enter(AppState),
+			Exit(AppState),
+		}
+
+		fn stateful(s: Res<State>, mut c: ResMut<Calls>) {
+			c.0.push(UpdateState(s.current));
+		}
+		fn enter(s: Res<State>, mut c: ResMut<Calls>) {
+			c.0.push(Enter(s.current));
+		}
+		fn exit(s: Res<State>, mut c: ResMut<Calls>) {
+			c.0.push(Exit(s.current));
+		}
+		fn take_calls(app: &mut App) -> Vec<CallType> {
+			app.world
+				.get_resource_mut::<Calls>()
+				.unwrap()
+				.0
+				.drain(..)
+				.collect::<Vec<_>>()
+		}
+		fn schedule_transition(app: &mut App, s: AppState) {
+			app.world
+				.get_resource_mut::<State>()
+				.unwrap()
+				.schedule_transition(s);
+		}
+
+		let mut app = App::new()
+			.insert_resource(Calls::default())
+			.add_startup_system((|mut c: ResMut<Calls>| c.0.push(Startup)).system())
+			.add_system_stateful(Play, stateful.system())
+			.add_system_stateful(Preload, stateful.system())
+			.add_system((|mut c: ResMut<Calls>| c.0.push(Update)).system())
+			.on_enter_state(Preload, enter.system())
+			.on_exit_state(Preload, exit.system())
+			.on_enter_state(Play, enter.system())
+			.on_exit_state(Play, exit.system())
+			.build();
+
+		assert_eq!(take_calls(&mut app), &[Startup, Enter(Preload)]);
+
+		app.dispatch_update();
+		assert_eq!(take_calls(&mut app), &[UpdateState(Preload), Update]);
+
+		schedule_transition(&mut app, Play);
+		app.dispatch_update();
+		assert_eq!(
+			take_calls(&mut app),
+			&[UpdateState(Preload), Update, Exit(Preload), Enter(Play)]
+		);
+
+		schedule_transition(&mut app, Play);
+		app.dispatch_update();
+		assert_eq!(
+			take_calls(&mut app),
+			&[UpdateState(Play), Update, Exit(Play), Enter(Play)]
 		);
 	}
 }
