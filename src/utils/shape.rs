@@ -23,12 +23,12 @@ impl Default for Cube {
 
 impl From<Cube> for Mesh {
 	fn from(cube: Cube) -> Self {
-		Box::new(cube.size, cube.size, cube.size).into()
+		BoxShape::new(cube.size, cube.size, cube.size).into()
 	}
 }
 
 #[derive(Debug, Copy, Clone)]
-pub struct Box {
+pub struct BoxShape {
 	pub min_x: f32,
 	pub max_x: f32,
 
@@ -39,9 +39,9 @@ pub struct Box {
 	pub max_z: f32,
 }
 
-impl Box {
-	pub fn new(x_length: f32, y_length: f32, z_length: f32) -> Box {
-		Box {
+impl BoxShape {
+	pub fn new(x_length: f32, y_length: f32, z_length: f32) -> BoxShape {
+		BoxShape {
 			max_x: x_length / 2.0,
 			min_x: -x_length / 2.0,
 			max_y: y_length / 2.0,
@@ -52,14 +52,14 @@ impl Box {
 	}
 }
 
-impl Default for Box {
+impl Default for BoxShape {
 	fn default() -> Self {
-		Box::new(2.0, 1.0, 1.0)
+		BoxShape::new(2.0, 1.0, 1.0)
 	}
 }
 
-impl From<Box> for Mesh {
-	fn from(sp: Box) -> Self {
+impl From<BoxShape> for Mesh {
+	fn from(sp: BoxShape) -> Self {
 		#[rustfmt::skip]
 		let vertex_data = [
 			// Top
