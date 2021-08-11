@@ -38,9 +38,18 @@ impl AppSystem {
 		stage: CoreStage,
 		state: Option<AppState>,
 	) -> Self {
+		Self::from_box(Box::new(system), world, stage, state)
+	}
+
+	fn from_box(
+		mut system: Box<dyn System<In = (), Out = ()>>,
+		mut world: &mut World,
+		stage: CoreStage,
+		state: Option<AppState>,
+	) -> Self {
 		system.initialize(&mut world);
 		Self {
-			system: Box::new(system),
+			system,
 			stage,
 			state,
 		}
@@ -180,6 +189,19 @@ impl AppBuilder {
 		self
 	}
 
+	pub fn add_system_list(
+		&mut self,
+		stage: CoreStage,
+		state: Option<AppState>,
+		list: SystemList,
+	) -> &mut Self {
+		for sys in list.systems.into_iter() {
+			let s = AppSystem::from_box(sys, self.world(), stage, state);
+			self.systems.push(s);
+		}
+		self
+	}
+
 	pub fn on_enter_state(
 		&mut self,
 		state: AppState,
@@ -305,6 +327,23 @@ impl State {
 	}
 }
 
+pub struct SystemList {
+	systems: Vec<Box<dyn System<In = (), Out = ()>>>,
+}
+
+impl SystemList {
+	pub fn new() -> Self {
+		Self {
+			systems: Default::default(),
+		}
+	}
+
+	pub fn with(mut self, system: impl System<In = (), Out = ()>) -> Self {
+		self.systems.push(Box::new(system));
+		self
+	}
+}
+
 #[cfg(test)]
 mod tests {
 	use super::*;
@@ -353,8 +392,11 @@ mod tests {
 		let mut app = App::new()
 			.insert_resource(Count(0))
 			.add_event::<Evt>()
-			.add_system(emit.system())
-			.add_system(consume.system())
+			.add_system_list(
+				CoreStage::Update,
+				None,
+				SystemList::new().with(emit.system()).with(consume.system()),
+			)
 			.build();
 
 		app.dispatch_update();
