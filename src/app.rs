@@ -134,7 +134,10 @@ impl App {
 		let State { current, pending } = *self.get_state();
 		if let Some(next) = pending {
 			self.run_systems(|t| t == SystemType::OnExit(current));
-			self.get_state().current = next;
+			*self.get_state() = State {
+				current: next,
+				pending: None,
+			};
 			self.run_systems(|t| t == SystemType::OnEnter(next));
 		}
 	}
