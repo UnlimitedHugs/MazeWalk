@@ -100,15 +100,11 @@ impl App {
 	}
 
 	fn run_systems(systems: &mut [AppSystem], world: &mut World, current_state: Option<AppState>) {
-		let mut pending_buffers = vec![];
 		for sys in systems.iter_mut() {
 			if sys.state.is_some() && sys.state != current_state {
 				continue;
 			}
 			sys.system.run((), world);
-			pending_buffers.push(sys);
-		}
-		for sys in pending_buffers.into_iter() {
 			sys.system.apply_buffers(world);
 		}
 	}
@@ -181,10 +177,11 @@ impl AppBuilder {
 
 	pub fn add_system_stateful(
 		&mut self,
+		stage: CoreStage,
 		state: AppState,
 		system: impl System<In = (), Out = ()>,
 	) -> &mut Self {
-		let s = AppSystem::new(system, self.world(), CoreStage::Update, Some(state));
+		let s = AppSystem::new(system, self.world(), stage, Some(state));
 		self.systems.push(s);
 		self
 	}
@@ -312,7 +309,7 @@ impl AppBuilder {
 }
 
 #[derive(Default)]
-struct State {
+pub struct State {
 	current: AppState,
 	pending: Option<AppState>,
 }
@@ -347,7 +344,6 @@ impl SystemList {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use bevy_ecs::system::BoxedSystem;
 
 	struct Evt(i32);
 	#[derive(Debug)]
@@ -477,8 +473,8 @@ mod tests {
 		let mut app = App::new()
 			.insert_resource(Calls::default())
 			.add_startup_system((|mut c: ResMut<Calls>| c.0.push(Startup)).system())
-			.add_system_stateful(Play, stateful.system())
-			.add_system_stateful(Preload, stateful.system())
+			.add_system_stateful(CoreStage::Update, Play, stateful.system())
+			.add_system_stateful(CoreStage::Update, Preload, stateful.system())
 			.add_system((|mut c: ResMut<Calls>| c.0.push(Update)).system())
 			.on_enter_state(Preload, enter.system())
 			.on_exit_state(Preload, exit.system())
