@@ -1,7 +1,4 @@
-use crate::{
-	app::*,
-	assets::{AssetEvent, Assets},
-};
+use crate::assets::{AssetEvent, Assets};
 
 use super::draw::{ContextResources, MeshBufferSet};
 use crate::prelude::*;

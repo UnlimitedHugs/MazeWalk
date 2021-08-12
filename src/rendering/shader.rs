@@ -121,39 +121,23 @@ pub fn upload_shaders(
 	}
 }
 
-// #[derive(Default)]
-// pub struct ShaderLoader;
-
-// impl AssetLoader for ShaderLoader {
-// 	fn load<'a>(
-// 		&'a self,
-// 		bytes: &'a [u8],
-// 		load_context: &'a mut LoadContext,
-// 	) -> BoxedFuture<'a, Result<(), anyhow::Error>> {
-// 		Box::pin(async move {
-// 			let contents = str::from_utf8(bytes).with_context(|| "read shader utf8")?;
-// 			if contents.len() == 0 {
-// 				// asset loader bug?
-// 				return Ok(())
-// 			}
-// 			if !contents.starts_with("#version") {
-// 				bail!("expected version directive")
-// 			}
-// 			let version_newline_pos = contents
-// 				.find('\n')
-// 				.with_context(|| "expected newline after version directive")?;
-// 			let vertex = {
-// 				let mut v = contents.to_string();
-// 				v.insert_str(version_newline_pos + 1, "#define VERTEX\n");
-// 				v
-// 			};
-// 			let fragment = contents;
-// 			load_context.set_default_asset(LoadedAsset::new(Shader::new(&vertex, fragment)));
-// 			Ok(())
-// 		})
-// 	}
-
-// 	fn extensions(&self) -> &[&str] {
-// 		&["glsl"]
-// 	}
-// }
+pub fn process_shader_source(bytes: Vec<u8>) -> Result<Shader, String> {
+	if let Ok(contents) = str::from_utf8(bytes.as_slice()) {
+		if !contents.starts_with("#version") {
+			return Err("expected version directive".to_string());
+		}
+		if let Some(version_newline_pos) = contents.find('\n') {
+			let vertex = {
+				let mut v = contents.to_string();
+				v.insert_str(version_newline_pos + 1, "#define VERTEX\n");
+				v
+			};
+			let fragment = contents;
+			Ok(Shader::new(&vertex, fragment))
+		} else {
+			Err("expected newline after version directive".to_string())
+		}
+	} else {
+		Err("failed to read shader utf8".to_string())
+	}
+}
