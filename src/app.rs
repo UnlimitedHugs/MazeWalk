@@ -1,4 +1,4 @@
-use bevy_ecs::{component::Component, prelude::*};
+use bevy_ecs::{archetype::ArchetypeGeneration, component::Component, prelude::*};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum CoreStage {
@@ -25,53 +25,44 @@ impl Default for AppState {
 	}
 }
 
+#[derive(Clone, Copy, PartialEq)]
+enum SystemType {
+	Startup,
+	Stateless,
+	Stateful(AppState),
+	OnEnter(AppState),
+	OnExit(AppState),
+}
+
 struct AppSystem {
 	system: Box<dyn System<In = (), Out = ()>>,
 	stage: CoreStage,
-	state: Option<AppState>,
+	typ: SystemType,
 }
 
 impl AppSystem {
-	fn new(
-		mut system: impl System<In = (), Out = ()>,
-		mut world: &mut World,
-		stage: CoreStage,
-		state: Option<AppState>,
-	) -> Self {
-		Self::from_box(Box::new(system), world, stage, state)
+	fn new(system: impl System<In = (), Out = ()>, stage: CoreStage, typ: SystemType) -> Self {
+		Self::from_box(Box::new(system), stage, typ)
 	}
 
 	fn from_box(
-		mut system: Box<dyn System<In = (), Out = ()>>,
-		mut world: &mut World,
+		system: Box<dyn System<In = (), Out = ()>>,
 		stage: CoreStage,
-		state: Option<AppState>,
+		typ: SystemType,
 	) -> Self {
-		system.initialize(&mut world);
-		Self {
-			system,
-			stage,
-			state,
-		}
+		Self { system, stage, typ }
+	}
+
+	fn initialize(mut self, w: &mut World) -> Self {
+		self.system.initialize(w);
+		self
 	}
 }
 
-#[derive(PartialEq)]
-enum StateTransitionType {
-	Enter,
-	Exit,
-}
-
-struct StateListener {
-	system: AppSystem,
-	transition: StateTransitionType,
-}
-
-#[derive(Default)]
 pub struct App {
 	pub world: World,
 	systems: Vec<AppSystem>,
-	state_listeners: Vec<StateListener>,
+	archetype_generation: ArchetypeGeneration,
 }
 
 impl App {
@@ -81,7 +72,9 @@ impl App {
 
 	pub fn dispatch_update(&mut self) {
 		let current_state = self.get_state().current;
-		Self::run_systems(&mut self.systems, &mut self.world, Some(current_state));
+		self.run_systems(|s| {
+			s == SystemType::Stateless || s == SystemType::Stateful(current_state)
+		});
 		self.world.check_change_ticks();
 		self.world.clear_trackers();
 		self.apply_state_transition();
@@ -99,14 +92,38 @@ impl App {
 		self.get_event::<T>().send(value)
 	}
 
-	fn run_systems(systems: &mut [AppSystem], world: &mut World, current_state: Option<AppState>) {
-		for sys in systems.iter_mut() {
-			if sys.state.is_some() && sys.state != current_state {
-				continue;
+	fn run_systems(&mut self, predicate: impl Fn(SystemType) -> bool) {
+		for i in 0..self.systems.len() {
+			if (predicate)(self.systems[i].typ) {
+				{
+					let sys = self.systems.get_mut(i).unwrap();
+					sys.system.run((), &mut self.world);
+					sys.system.apply_buffers(&mut self.world);
+				}
+				self.update_archetypes();
 			}
-			sys.system.run((), world);
-			sys.system.apply_buffers(world);
 		}
+	}
+
+	fn update_archetypes(&mut self) {
+		// swiped from bevy_ecs/src/schedule/executor.rs
+		let archetypes = self.world.archetypes();
+		let old_generation = self.archetype_generation;
+		let new_generation = archetypes.generation();
+		if old_generation == new_generation {
+			return;
+		}
+		let archetype_index_range = if old_generation.value() == usize::MAX {
+			0..archetypes.len()
+		} else {
+			old_generation.value()..archetypes.len()
+		};
+		for archetype in archetypes.archetypes[archetype_index_range].iter() {
+			for sys in self.systems.iter_mut() {
+				sys.system.new_archetype(archetype);
+			}
+		}
+		self.archetype_generation = new_generation;
 	}
 
 	fn get_state(&mut self) -> Mut<State> {
@@ -116,42 +133,25 @@ impl App {
 	fn apply_state_transition(&mut self) {
 		let State { current, pending } = *self.get_state();
 		if let Some(next) = pending {
-			self.call_state_listeners(current, StateTransitionType::Exit);
+			self.run_systems(|t| t == SystemType::OnExit(current));
 			self.get_state().current = next;
-			self.call_state_listeners(next, StateTransitionType::Enter);
-		}
-	}
-
-	fn call_state_listeners(&mut self, state: AppState, transition: StateTransitionType) {
-		for listener in self.state_listeners.iter_mut() {
-			let StateListener {
-				system,
-				transition: system_transition,
-			} = listener;
-			if system.state == Some(state) && *system_transition == transition {
-				system.system.run((), &mut self.world);
-				system.system.apply_buffers(&mut self.world);
-			}
+			self.run_systems(|t| t == SystemType::OnEnter(next));
 		}
 	}
 }
 
 pub struct AppBuilder {
 	pub world: Option<World>,
-	startup_systems: Vec<AppSystem>,
 	systems: Vec<AppSystem>,
 	runner: Option<Box<dyn FnOnce(App)>>,
-	state_listeners: Vec<StateListener>,
 }
 
 impl AppBuilder {
 	fn new() -> Self {
 		Self {
 			world: Some(Default::default()),
-			startup_systems: Default::default(),
 			systems: Default::default(),
 			runner: None,
-			state_listeners: Default::default(),
 		}
 	}
 
@@ -164,14 +164,14 @@ impl AppBuilder {
 		stage: CoreStage,
 		system: impl System<In = (), Out = ()>,
 	) -> &mut Self {
-		let s = AppSystem::new(system, self.world(), stage, None);
+		let s = AppSystem::new(system, stage, SystemType::Stateless);
 		self.systems.push(s);
 		self
 	}
 
 	pub fn add_startup_system(&mut self, system: impl System<In = (), Out = ()>) -> &mut Self {
-		let s = AppSystem::new(system, self.world(), CoreStage::First, None);
-		self.startup_systems.push(s);
+		let s = AppSystem::new(system, CoreStage::First, SystemType::Startup);
+		self.systems.push(s);
 		self
 	}
 
@@ -181,7 +181,7 @@ impl AppBuilder {
 		state: AppState,
 		system: impl System<In = (), Out = ()>,
 	) -> &mut Self {
-		let s = AppSystem::new(system, self.world(), stage, Some(state));
+		let s = AppSystem::new(system, stage, SystemType::Stateful(state));
 		self.systems.push(s);
 		self
 	}
@@ -193,7 +193,11 @@ impl AppBuilder {
 		list: SystemList,
 	) -> &mut Self {
 		for sys in list.systems.into_iter() {
-			let s = AppSystem::from_box(sys, self.world(), stage, state);
+			let typ = match state {
+				Some(s) => SystemType::Stateful(s),
+				None => SystemType::Stateless,
+			};
+			let s = AppSystem::from_box(sys, stage, typ);
 			self.systems.push(s);
 		}
 		self
@@ -204,7 +208,11 @@ impl AppBuilder {
 		state: AppState,
 		system: impl System<In = (), Out = ()>,
 	) -> &mut Self {
-		self.add_state_listener(state, StateTransitionType::Enter, system);
+		self.systems.push(AppSystem::new(
+			system,
+			CoreStage::First,
+			SystemType::OnEnter(state),
+		));
 		self
 	}
 
@@ -213,21 +221,12 @@ impl AppBuilder {
 		state: AppState,
 		system: impl System<In = (), Out = ()>,
 	) -> &mut Self {
-		self.add_state_listener(state, StateTransitionType::Exit, system);
+		self.systems.push(AppSystem::new(
+			system,
+			CoreStage::First,
+			SystemType::OnExit(state),
+		));
 		self
-	}
-
-	fn add_state_listener(
-		&mut self,
-		state: AppState,
-		transition: StateTransitionType,
-		system: impl System<In = (), Out = ()>,
-	) {
-		let listener = StateListener {
-			system: AppSystem::new(system, self.world(), CoreStage::Last, Some(state)),
-			transition,
-		};
-		self.state_listeners.push(listener);
 	}
 
 	pub fn add_event<T>(&mut self) -> &mut Self
@@ -268,26 +267,23 @@ impl AppBuilder {
 		let state = State::default();
 		let current_state = state.current;
 		world.insert_resource(state);
-		App::run_systems(
-			&mut self.startup_systems.drain(..).collect::<Vec<_>>(),
-			&mut world,
-			None,
-		);
 
 		let systems: Vec<_> = {
 			self.systems.sort_by_key(|sys| sys.stage);
-			self.systems.drain(..).collect::<Vec<_>>()
+			self.systems
+				.drain(..)
+				.map(|s| s.initialize(&mut world))
+				.collect::<Vec<_>>()
 		};
-
-		let state_listeners = self.state_listeners.drain(..).collect::<Vec<_>>();
 
 		let mut app = App {
 			world,
 			systems,
-			state_listeners,
+			archetype_generation: ArchetypeGeneration::new(usize::MAX),
 		};
 
-		app.call_state_listeners(current_state, StateTransitionType::Enter);
+		app.run_systems(|t| t == SystemType::Startup);
+		app.run_systems(|t| t == SystemType::OnEnter(current_state));
 		app
 	}
 
@@ -500,5 +496,31 @@ mod tests {
 			take_calls(&mut app),
 			&[UpdateState(Play), Update, Exit(Play), Enter(Play)]
 		);
+	}
+
+	#[test]
+	fn process_system_commands() {
+		fn startup(mut c: Commands) {
+			c.spawn().insert(1i32);
+		}
+		fn on_enter(mut c: Commands, q: Query<&i32>) {
+			q.single().unwrap();
+			c.spawn().insert(1u32);
+		}
+		fn update_first(mut c: Commands, q: Query<&u32>) {
+			q.single().unwrap();
+			c.spawn().insert(1u8);
+		}
+		fn update_second(q: Query<&u8>) {
+			q.single().unwrap();
+		}
+
+		App::new()
+			.on_enter_state(AppState::Preload, on_enter.system())
+			.add_startup_system(startup.system())
+			.add_system(update_first.system())
+			.add_system(update_second.system())
+			.build()
+			.dispatch_update();
 	}
 }
