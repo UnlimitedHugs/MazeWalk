@@ -139,6 +139,10 @@ impl Keyboard {
 		self.held.contains(&k)
 	}
 
+	pub fn get_just_pressed(&self) -> impl ExactSizeIterator<Item = &KeyCode> {
+		self.just_pressed.iter()
+	}
+
 	fn toggle_key(&mut self, k: KeyCode, pressed: bool) {
 		if pressed {
 			self.just_pressed.insert(k);

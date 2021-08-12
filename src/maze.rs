@@ -1,45 +1,23 @@
 mod tweaks;
 
+use crate::prelude::*;
 use std::cmp::Ordering;
 
-use bevy_miniquad::Context;
-use tweaks::{Tweaks, TweaksPlugin};
+use tweaks::Tweaks;
 
-use super::{
-	maze_gen::{self, GridDirection, GridMaze, GridNode},
-	rendering::*,
-	utils::Color,
-	utils::{Plane, Quad as QuadShape},
+use crate::maze_gen::{self, GridDirection, GridMaze, GridNode};
+use easer::functions::{Easing, Quad as QuadEase};
+use glam::{ivec2, vec2, vec3, EulerRot, IVec2, Mat4, Quat, Vec2, Vec3};
+use miniquad::{
+	Comparison, Context, CullFace, FilterMode, KeyCode, PipelineParams, TextureWrap, UniformType,
 };
-use bevy::{
-	input::mouse::MouseMotion,
-	math::{ivec2, vec2, vec3},
-	prelude::*,
-};
-use easer::functions::{Easing, Quad};
-use miniquad::{Comparison, CullFace, FilterMode, PipelineParams, TextureWrap, UniformType};
 use rand::{prelude::*, rngs::StdRng};
 use serde_derive::Deserialize;
 
-#[derive(Debug, Clone, Eq, PartialEq, Hash)]
-pub enum GameState {
-	Preload,
-	Play,
-}
-
-#[derive(Debug, Hash, PartialEq, Eq, Clone, SystemLabel)]
-enum SystemLabels {
-	InitPlayState,
-	ApplyEulerRotation,
-	PlayerMovement,
-}
-
-pub struct MazePlugin;
-impl Plugin for MazePlugin {
-	fn build(&self, app: &mut AppBuilder) {
-		use SystemLabels::*;
-		#[rustfmt::skip]
-		app.add_plugin(TweaksPlugin)
+pub fn plugin(app: &mut AppBuilder) {
+	#[rustfmt::skip]
+	app
+		.add_plugin(tweaks::plugin)
 		.insert_resource(RenderSettings {
 			pipeline: PipelineParams {
 				depth_test: Comparison::LessOrEqual,
@@ -54,45 +32,34 @@ impl Plugin for MazePlugin {
 		.add_event::<ChunkExited>()
 		.add_event::<ControlModeChanged>()
 		.add_startup_system(preload_assets.system())
-		.insert_resource(State::new(GameState::Preload))
-		.add_system_set_to_stage(CoreStage::PreUpdate, State::<GameState>::get_driver())
-		.add_system_set_to_stage(CoreStage::Update, State::<GameState>::get_driver())
-		.add_system_set_to_stage(
-			CoreStage::PreUpdate,
-			SystemSet::on_update(GameState::Preload)
-				.with_system(tweaks::wait_for_tweaks_ready.system().before(InitPlayState))
+		.add_system_stateful(
+			CoreStage::PreUpdate, AppState::Preload,
+			tweaks::wait_for_tweaks_ready.system()
 		)
-		.add_system_set_to_stage(
-			CoreStage::PreUpdate,
-			SystemSet::on_enter(GameState::Play)
-				.with_system(init_play_state.system().label(InitPlayState)),
+		.on_enter_state(AppState::Play, init_play_state.system())
+		.add_system_list(
+			CoreStage::Update, Some(AppState::Play),
+			SystemList::new()
+				.with(auto_walk.system())
+				.with(camera_look_input.system())
+				.with(apply_euler_rotation.system())
+				.with(player_movement.system())
+				.with(collide_with_walls.system())
+				.with(track_current_chunk.system())
+				.with(update_hover_mode.system())
+				.with(spawn_additional_chunk.system())
+				.with(despawn_traversed_chunks.system())
+				.with(read_control_mode_input.system())
+				.with(toggle_fullscreen.system())
+				.with(tweaks::restart_on_tweaks_changed.system())
 		)
-		.add_system_set(
-			SystemSet::on_update(GameState::Play)
-				.with_system(auto_walk.system().before(ApplyEulerRotation))
-				.with_system(camera_look_input.system().before(ApplyEulerRotation))
-				.with_system(apply_euler_rotation.system().label(ApplyEulerRotation))
-				.with_system(player_movement.system().label(PlayerMovement))
-				.with_system(collide_with_walls.system().after(PlayerMovement))
-				.with_system(track_current_chunk.system().after(PlayerMovement))
-				.with_system(update_hover_mode.system())
-				.with_system(spawn_additional_chunk.system())
-				.with_system(despawn_traversed_chunks.system())
-				.with_system(read_control_mode_input.system())
-				.with_system(toggle_fullscreen.exclusive_system())
-				.with_system(tweaks::restart_on_tweaks_changed.system())
-		)
-		.add_system_set(
-			SystemSet::on_exit(GameState::Play)
-				.with_system(reset_play_state.system()),
-		)
-		.add_system_set_to_stage(
-			RenderStage::PreRender,
-			SystemSet::new()
-				.with_system(update_uniforms_from_transforms.system())
-				.with_system(update_uniforms_from_camera.system()),
+		.on_exit_state(AppState::Play, reset_play_state.system())
+		.add_system_list(
+			CoreStage::PreRender, Some(AppState::Play),
+			SystemList::new()
+				.with(update_uniforms_from_transforms.system())
+				.with(update_uniforms_from_camera.system()),
 		);
-	}
 }
 
 const PI: f32 = std::f32::consts::PI;
@@ -101,18 +68,14 @@ const CHUNK_SIZE: i32 = 17;
 
 fn preload_assets(
 	mut cmd: Commands,
-	asset_server: Res<AssetServer>,
 	mut meshes: ResMut<Assets<Mesh>>,
+	mut textures: ResMut<Assets<Texture>>,
 	mut texture_settings: ResMut<TextureLoadSettings>,
+	mut shaders: ResMut<Assets<Shader>>,
 	mut shader_meta: ResMut<ShaderMetaStore>,
 ) {
-	#[cfg(debug_assertions)]
-	asset_server.watch_for_changes().unwrap();
-
-	let _tweaks = asset_server.load("tweaks.yml");
-
 	let mut rng = StdRng::from_entropy();
-	let shader = asset_server.load("shader.glsl");
+	let shader = shaders.load("assets/shader.glsl");
 
 	#[rustfmt::skip]
 	shader_meta.set(&shader,
@@ -155,12 +118,12 @@ fn preload_assets(
 		filter: FilterMode::Linear,
 		anisotropy: 8.0,
 	});
-	let wall_tex_diffuse = asset_server.load("wall_diffuse.png");
-	let wall_tex_normal = asset_server.load("wall_normal.png");
-	let floor_tex_diffuse = asset_server.load("tiles_diffuse.png");
-	let floor_tex_normal = asset_server.load("tiles_normal.png");
-	let ceiling_tex_diffuse = asset_server.load("concrete_diffuse.png");
-	let ceiling_tex_normal = asset_server.load("concrete_normal.png");
+	let wall_tex_diffuse = textures.load("assets/wall_diffuse.png");
+	let wall_tex_normal = textures.load("assets/wall_normal.png");
+	let floor_tex_diffuse = textures.load("assets/tiles_diffuse.png");
+	let floor_tex_normal = textures.load("assets/tiles_normal.png");
+	let ceiling_tex_diffuse = textures.load("assets/concrete_diffuse.png");
+	let ceiling_tex_normal = textures.load("assets/concrete_normal.png");
 
 	cmd.insert_resource(MazeAssets {
 		shader,
@@ -172,7 +135,6 @@ fn preload_assets(
 		floor_tex_normal,
 		ceiling_tex_diffuse,
 		ceiling_tex_normal,
-		_tweaks,
 	});
 }
 
@@ -186,7 +148,6 @@ struct MazeAssets {
 	floor_tex_normal: Handle<Texture>,
 	ceiling_tex_diffuse: Handle<Texture>,
 	ceiling_tex_normal: Handle<Texture>,
-	_tweaks: Handle<Tweaks>,
 }
 
 struct Random(StdRng);
@@ -225,7 +186,7 @@ fn init_play_state(
 	};
 
 	cmd.spawn_bundle(CameraBundle {
-		transform: camera_transform,
+		transform: camera_transform.clone(),
 		camera: Camera {
 			field_of_view: 75.0,
 			clipping_distance: 0.1..100.,
@@ -263,7 +224,7 @@ struct Chunk {
 struct ChunkCoords(IVec2);
 impl ChunkCoords {
 	const ZERO: ChunkCoords = ChunkCoords(IVec2::ZERO);
-	fn to_rect(self) -> Rect<f32> {
+	fn to_rect(self) -> Rect {
 		let (x, y) = (
 			(self.0.x * CHUNK_SIZE) as f32,
 			(self.0.y * CHUNK_SIZE) as f32,
@@ -294,7 +255,7 @@ struct RotationEuler {
 
 fn camera_look_input(
 	mut q: Query<&mut RotationEuler, With<Camera>>,
-	mut mouse_motion: EventReader<MouseMotion>,
+	mut mouse_move: EventReader<MouseMove>,
 	control_mode: Res<ControlMode>,
 ) {
 	if *control_mode != ControlMode::Manual && *control_mode != ControlMode::Hover {
@@ -303,9 +264,9 @@ fn camera_look_input(
 	let mut euler = q.single_mut().unwrap();
 	let mouse_sensitivity = 0.006f32;
 	let pitch_limit = 90.0f32.to_radians() * 0.99;
-	for MouseMotion { delta } in mouse_motion.iter() {
-		euler.yaw -= delta.x * mouse_sensitivity;
-		euler.pitch = (euler.pitch - delta.y * mouse_sensitivity).clamp(-pitch_limit, pitch_limit);
+	for MouseMove { dx, dy } in mouse_move.iter() {
+		euler.yaw -= dx * mouse_sensitivity;
+		euler.pitch = (euler.pitch - dy * mouse_sensitivity).clamp(-pitch_limit, pitch_limit);
 	}
 }
 
@@ -313,26 +274,26 @@ fn apply_euler_rotation(
 	mut q: Query<(&mut GlobalTransform, &RotationEuler), Changed<RotationEuler>>,
 ) {
 	for (mut tx, RotationEuler { yaw, pitch }) in q.iter_mut() {
-		tx.rotation = Quat::from_rotation_ypr(*yaw, *pitch, 0.);
+		tx.rotation = Quat::from_euler(EulerRot::YXZ, *yaw, *pitch, 0.);
 	}
 }
 
 fn player_movement(
 	mut q: Query<(&mut GlobalTransform, &RotationEuler), With<Camera>>,
-	key: Res<Input<KeyCode>>,
+	key: Res<Keyboard>,
 	t: Res<Time>,
 ) {
 	let mut movement = Vec3::ZERO;
-	if key.pressed(KeyCode::W) {
+	if key.is_pressed(KeyCode::W) {
 		movement += vec3(0., 0., -1.0);
 	}
-	if key.pressed(KeyCode::S) {
+	if key.is_pressed(KeyCode::S) {
 		movement += vec3(0., 0., 1.0);
 	}
-	if key.pressed(KeyCode::A) {
+	if key.is_pressed(KeyCode::A) {
 		movement += vec3(-1., 0., 0.);
 	}
-	if key.pressed(KeyCode::D) {
+	if key.is_pressed(KeyCode::D) {
 		movement += vec3(1., 0., 0.);
 	}
 
@@ -495,7 +456,7 @@ struct NoClip;
 
 fn read_control_mode_input(
 	mut current: ResMut<ControlMode>,
-	input: Res<Input<KeyCode>>,
+	input: Res<Keyboard>,
 	mut changed: EventWriter<ControlModeChanged>,
 ) {
 	let pressed_state = input.get_just_pressed().next().and_then(|key| match key {
@@ -513,7 +474,7 @@ fn read_control_mode_input(
 	}
 }
 
-#[derive(PartialEq, Eq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 enum ControlMode {
 	Manual,
 	Hover,
@@ -523,11 +484,11 @@ enum ControlMode {
 struct ControlModeChanged(ControlMode);
 
 fn toggle_fullscreen(
-	input: Res<Input<KeyCode>>,
+	input: Res<Keyboard>,
 	mut is_fullscreen: Local<bool>,
 	context: ResMut<Context>,
 ) {
-	if let Some(KeyCode::F) = input.get_just_pressed().next() {
+	if input.was_just_pressed(KeyCode::F) {
 		*is_fullscreen = !*is_fullscreen;
 		context.set_fullscreen(*is_fullscreen);
 	}
@@ -665,12 +626,16 @@ fn spawn_additional_chunk(
 
 fn despawn_traversed_chunks(
 	mut cmd: Commands,
-	q: Query<(Entity, &Chunk)>,
+	q_chunks: Query<(Entity, &Chunk)>,
 	mut entered_event: EventReader<ChunkEntered>,
 ) {
 	for ChunkEntered(entered_ent) in entered_event.iter() {
-		let entered_index = q.get(*entered_ent).expect("resolve entered chunk").1.index;
-		for (ent, chunk) in q.iter() {
+		let entered_index = q_chunks
+			.get(*entered_ent)
+			.expect("resolve entered chunk")
+			.1
+			.index;
+		for (ent, chunk) in q_chunks.iter() {
 			if entered_index > 0 && chunk.index < entered_index - 1 {
 				cmd.entity(ent).despawn_recursive();
 			}
@@ -696,7 +661,7 @@ fn auto_walk(
 	time: Res<Time>,
 	control_mode: Res<ControlMode>,
 	mut mode_changed: EventReader<ControlModeChanged>,
-	input: Res<Input<KeyCode>>,
+	input: Res<Keyboard>,
 ) {
 	let (mut cam_transform, mut cam_euler) = q_cam.single_mut().expect("get camera position");
 	for mode in mode_changed.iter() {
@@ -708,7 +673,7 @@ fn auto_walk(
 	if *control_mode == ControlMode::AutoWalk {
 		if let Some(mut t) = state.tween_progress {
 			let delta = time.delta_seconds()
-				* (if input.pressed(KeyCode::LShift) {
+				* (if input.is_pressed(KeyCode::LeftShift) {
 					5.
 				} else {
 					1.
@@ -718,7 +683,7 @@ fn auto_walk(
 			let tween_duration_multiplier = 2.0 / walk_distance.max(0.0001);
 			t = (t + delta * tween_duration_multiplier).min(1.0);
 			cam_transform.translation = state.translation_from.lerp(state.translation_to, t);
-			let rotation_t = Quad::ease_in_out((t * 2.).min(1.0), 0., 1., 1.);
+			let rotation_t = QuadEase::ease_in_out((t * 2.).min(1.0), 0., 1., 1.);
 			cam_euler.yaw = lerp_angle(state.rotation_from, state.rotation_to, rotation_t);
 			cam_euler.pitch = 0.;
 			state.tween_progress = (t < 1.0).then(|| t);
@@ -900,46 +865,51 @@ fn generate_chunk(
 			&& grid[pos.y as usize][pos.x as usize]
 	};
 
-	let quad_mesh: Mesh = QuadShape::new(Vec2::splat(1.0)).into();
-	let mut chunk_mesh = Mesh::new();
-	let mut chunk_walls = vec![];
+	let quad_mesh: Mesh = Quad::new(Vec2::splat(1.0)).into();
 
-	for x in 0..CHUNK_SIZE {
-		for z in 0..CHUNK_SIZE {
-			let cell_pos = ivec2(x, z);
-			if !has_block(cell_pos) {
-				continue;
-			}
-			let cell_transform = Transform::from_translation(vec3(x as f32, 0., z as f32));
-			let edges = CollisionEdges {
-				edges: CollisionEdge::ALL
-					.iter()
-					.filter_map(|e| {
-						if !has_block(cell_pos + e.get_direction().to_ivec2()) {
-							Some(e)
-						} else {
-							None
-						}
-					})
-					.copied()
-					.collect(),
-			};
+	let (chunk_mesh, chunk_walls) = {
+		let mut chunk_mesh = Mesh::new();
+		let mut chunk_walls = vec![];
 
-			let cell_offset_mat = cell_transform.compute_matrix();
-			for dir in GridDirection::ALL.iter() {
-				if !has_block(cell_pos + dir.get_offset().to_ivec2()) {
-					let face_transform =
-						dir.get_offset().to_mat4() * Mat4::from_translation(vec3(0., 0., 0.5));
-					chunk_mesh.extend_with(quad_mesh.transform(cell_offset_mat * face_transform))
+		for x in 0..CHUNK_SIZE {
+			for z in 0..CHUNK_SIZE {
+				let cell_pos = ivec2(x, z);
+				if !has_block(cell_pos) {
+					continue;
 				}
-			}
+				let cell_transform = GlobalTransform::from_translation(
+					vec3(x as f32, 0., z as f32) + coords.to_world_pos(),
+				);
+				let edges = CollisionEdges {
+					edges: CollisionEdge::ALL
+						.iter()
+						.filter_map(|e| {
+							if !has_block(cell_pos + e.get_direction().to_ivec2()) {
+								Some(e)
+							} else {
+								None
+							}
+						})
+						.copied()
+						.collect(),
+				};
 
-			let wall_entity = cmd
-				.spawn_bundle((Wall, cell_transform, GlobalTransform::identity(), edges))
-				.id();
-			chunk_walls.push(wall_entity);
+				let cell_offset_mat = cell_transform.compute_matrix();
+				for dir in GridDirection::ALL.iter() {
+					if !has_block(cell_pos + dir.get_offset().to_ivec2()) {
+						let face_transform =
+							dir.get_offset().to_mat4() * Mat4::from_translation(vec3(0., 0., 0.5));
+						chunk_mesh
+							.extend_with(quad_mesh.transform(cell_offset_mat * face_transform))
+					}
+				}
+
+				let wall_entity = cmd.spawn_bundle((Wall, cell_transform, edges)).id();
+				chunk_walls.push(wall_entity);
+			}
 		}
-	}
+		(chunk_mesh, chunk_walls)
+	};
 
 	let chunk = Chunk {
 		index,
@@ -962,13 +932,9 @@ fn generate_chunk(
 
 	let chunk_mesh_handle = meshes.add(chunk_mesh);
 
-	let chunk_transform = Transform::from_translation(coords.to_world_pos());
-
 	let chunk_entity = cmd
 		.spawn_bundle((
 			chunk.clone(),
-			chunk_transform,
-			GlobalTransform::identity(),
 			chunk_mesh_handle,
 			assets.shader.clone(),
 			Uniforms {
@@ -981,45 +947,51 @@ fn generate_chunk(
 			]),
 			Reset,
 		))
-		.push_children(&chunk_walls)
 		.id();
 
-	let wall_floor_common_components = (
-		assets.surface_mesh.clone(),
-		assets.shader.clone(),
-		Parent(chunk_entity),
-	);
+	let wall_floor_common_components = (assets.surface_mesh.clone(), assets.shader.clone());
 
 	let chunk_center = {
 		let center_offset = CHUNK_SIZE as f32 / 2. - CELL_SIZE / 2.;
-		vec3(center_offset, 0., center_offset)
+		vec3(center_offset, 0., center_offset) + coords.to_world_pos()
 	};
-	let floor_transform = Transform::from_translation(chunk_center + vec3(0., -CELL_SIZE / 2., 0.));
-	cmd.spawn_bundle((
-		floor_transform,
-		GlobalTransform::identity(),
-		TextureBindings(vec![
-			assets.floor_tex_diffuse.clone(),
-			assets.floor_tex_normal.clone(),
-		]),
-		uniforms_from_material(tweaks.floor_material),
-	))
-	.insert_bundle(wall_floor_common_components.clone());
+	let floor_transform =
+		GlobalTransform::from_translation(chunk_center + vec3(0., -CELL_SIZE / 2., 0.));
+	let floor_entity = cmd
+		.spawn_bundle((
+			floor_transform,
+			TextureBindings(vec![
+				assets.floor_tex_diffuse.clone(),
+				assets.floor_tex_normal.clone(),
+			]),
+			uniforms_from_material(tweaks.floor_material),
+		))
+		.insert_bundle(wall_floor_common_components.clone())
+		.id();
 
-	let ceiling_transform = Transform::from_matrix(
+	let ceiling_transform = GlobalTransform::from_matrix(
 		Mat4::from_translation(chunk_center + vec3(0., CELL_SIZE / 2., 0.))
 			* Mat4::from_rotation_z(PI),
 	);
-	cmd.spawn_bundle((
-		ceiling_transform,
-		GlobalTransform::identity(),
-		TextureBindings(vec![
-			assets.ceiling_tex_diffuse.clone(),
-			assets.ceiling_tex_normal.clone(),
-		]),
-		uniforms_from_material(tweaks.ceiling_material),
-	))
-	.insert_bundle(wall_floor_common_components);
+	let ceiling_entity = cmd
+		.spawn_bundle((
+			ceiling_transform,
+			TextureBindings(vec![
+				assets.ceiling_tex_diffuse.clone(),
+				assets.ceiling_tex_normal.clone(),
+			]),
+			uniforms_from_material(tweaks.ceiling_material),
+		))
+		.insert_bundle(wall_floor_common_components)
+		.id();
+
+	cmd.entity(chunk_entity).insert(Children(
+		chunk_walls
+			.into_iter()
+			.chain(std::iter::once(floor_entity))
+			.chain(std::iter::once(ceiling_entity))
+			.collect(),
+	));
 
 	chunk
 }
@@ -1052,22 +1024,6 @@ impl CollisionEdges {
 			})
 			.min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(Ordering::Equal))
 			.map(|o| *o.1)
-	}
-}
-
-trait RectExtension {
-	fn intersects(self, other: Self) -> bool;
-	fn contains(self, v: Vec2) -> bool;
-}
-impl RectExtension for Rect<f32> {
-	fn intersects(self, other: Self) -> bool {
-		!(other.right < self.left
-			|| self.right < other.left
-			|| other.top < self.bottom
-			|| self.top < other.bottom)
-	}
-	fn contains(self, v: Vec2) -> bool {
-		!(v.x < self.left || self.right < v.x || v.y < self.top || self.bottom < v.y)
 	}
 }
 
@@ -1117,25 +1073,5 @@ impl TupleVecConversion for (i32, i32) {
 
 	fn to_mat4(self) -> Mat4 {
 		Mat4::look_at_rh(Vec3::ZERO, self.to_vec3() * vec3(1., 1., -1.), Vec3::Y)
-	}
-}
-
-#[cfg(test)]
-mod tests {
-	use super::*;
-
-	#[test]
-	fn rect_contains() {
-		let r = Rect {
-			left: 1.,
-			right: 2.,
-			top: 3.,
-			bottom: 4.,
-		};
-		assert_eq!(r.contains(vec2(0.5, 0.5)), false);
-		assert_eq!(r.contains(vec2(1.5, 0.5)), false);
-		assert_eq!(r.contains(vec2(1.5, 3.5)), true);
-		assert_eq!(r.contains(vec2(3.5, 3.5)), false);
-		assert_eq!(r.contains(vec2(2.5, 4.5)), false);
 	}
 }
