@@ -14,6 +14,7 @@ pub struct ContextResources {
 pub struct MeshBufferSet {
 	pub vertex: Buffer,
 	pub index: Buffer,
+	pub index_count: usize,
 }
 
 pub fn render<Uniforms: Component>(
@@ -65,7 +66,7 @@ pub fn render<Uniforms: Component>(
 				images,
 			});
 			ctx.apply_uniforms(uniforms);
-			ctx.draw(0, mesh.index.size() as i32, 1);
+			ctx.draw(0, mesh.index_count as i32, 1);
 		}
 	}
 

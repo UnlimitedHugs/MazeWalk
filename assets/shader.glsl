@@ -1,4 +1,5 @@
-#version 330 core
+#version 300 es
+precision mediump float;
 
 #if defined(VERTEX) // vertex shader
 

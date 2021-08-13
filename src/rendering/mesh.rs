@@ -84,6 +84,7 @@ pub fn upload_meshes(
 								BufferType::IndexBuffer,
 								&mesh.indices,
 							),
+							index_count: mesh.indices.len(),
 						},
 					)
 					.is_some();
