@@ -8,7 +8,7 @@ use crate::prelude::*;
 use bevy_ecs::component::Component;
 pub use camera::{Camera, CameraBundle, ProjectionMatrix, ViewMatrix};
 pub use mesh::{Mesh, Vertex};
-use miniquad::{Context, PipelineParams};
+use miniquad::PipelineParams;
 pub use shader::{Shader, ShaderMetaStore};
 pub use texture::{Texture, TextureBindings, TextureLoadSettings, TextureProperties};
 
@@ -21,7 +21,6 @@ pub fn plugin(app: &mut AppBuilder) {
 		.insert_resource(shader::ShaderMetaStore::default())
 		.use_asset_processor(texture::process_png_texture)
 		.use_asset_processor(shader::process_shader_source)
-		.add_system(capture_mouse.system())
 		.add_system_to_stage(CoreStage::AssetEvents, texture::upload_textures.system())
 		.add_system_to_stage(CoreStage::AssetEvents, mesh::upload_meshes.system())
 		.add_system_to_stage(CoreStage::AssetEvents, shader::upload_shaders.system())
@@ -31,12 +30,6 @@ pub fn plugin(app: &mut AppBuilder) {
 #[derive(Default)]
 pub struct RenderSettings {
 	pub pipeline: PipelineParams,
-	pub capture_mouse: bool,
-}
-
-fn capture_mouse(ctx: Res<Context>, settings: Res<RenderSettings>) {
-	ctx.set_cursor_grab(settings.capture_mouse);
-	ctx.show_mouse(!settings.capture_mouse);
 }
 
 impl AppBuilder {

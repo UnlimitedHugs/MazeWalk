@@ -25,7 +25,6 @@ pub fn plugin(app: &mut AppBuilder) {
 				cull_face: CullFace::Back,
 				..Default::default()
 			},
-			capture_mouse: true,
 		})
 		.register_shader_uniforms::<Uniforms>()
 		.add_event::<ChunkEntered>()
@@ -50,6 +49,7 @@ pub fn plugin(app: &mut AppBuilder) {
 				.with(spawn_additional_chunk.system())
 				.with(despawn_traversed_chunks.system())
 				.with(read_control_mode_input.system())
+				.with(update_mouse_lock.system())
 				.with(toggle_fullscreen.system())
 				.with(tweaks::restart_on_tweaks_changed.system())
 		)
@@ -200,7 +200,7 @@ fn init_play_state(
 		},
 		Reset,
 	));
-	cmd.insert_resource(ControlMode::Manual);
+	cmd.insert_resource(ControlMode::AutoWalk);
 	cmd.insert_resource(CurrentChunk::default());
 	cmd.insert_resource(AutoWalkState::default());
 	cmd.insert_resource(Random(rng));
@@ -471,6 +471,22 @@ fn read_control_mode_input(
 		}
 		changed.send(ControlModeChanged(target_state));
 		*current = target_state;
+	}
+}
+
+fn update_mouse_lock(mode: Res<ControlMode>, ctx: ResMut<Context>, mut hidden_once: Local<bool>) {
+	if mode.is_changed() {
+		let lock = match *mode {
+			ControlMode::AutoWalk => false,
+			ControlMode::Manual | ControlMode::Hover => true,
+		};
+		ctx.set_cursor_grab(lock);
+		let show_cursor = !lock;
+		if !show_cursor || *hidden_once {
+			// first call must be "false", or cursor remains visible
+			ctx.show_mouse(show_cursor);
+			*hidden_once = true;
+		}
 	}
 }
 
