@@ -106,19 +106,20 @@ impl App {
 	}
 
 	fn update_archetypes(&mut self) {
-		// swiped from bevy_ecs/src/schedule/executor.rs
+		// adapted from bevy_ecs/src/schedule/executor.rs
 		let archetypes = self.world.archetypes();
 		let old_generation = self.archetype_generation;
 		let new_generation = archetypes.generation();
 		if old_generation == new_generation {
 			return;
 		}
-		let archetype_index_range = if old_generation.value() == usize::MAX {
-			0..archetypes.len()
+		let archetype_index_start = if old_generation.value() == usize::MAX {
+			0
 		} else {
-			old_generation.value()..archetypes.len()
+			old_generation.value()
 		};
-		for archetype in archetypes.archetypes[archetype_index_range].iter() {
+
+		for archetype in archetypes.iter().skip(archetype_index_start) {
 			for sys in self.systems.iter_mut() {
 				sys.system.new_archetype(archetype);
 			}
