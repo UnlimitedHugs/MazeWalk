@@ -14,7 +14,6 @@ miniquad = { path = "miniquad" }
 rand = { version = "0.8", default-features = false, features = ["small_rng"] }
 easer = "0.2.1"
 png = "0.16.8"
-anyhow = "1.0"
 serde = "1.0"
 serde_derive = "1.0"
 serde_yaml = "0.7.5"
