@@ -11,7 +11,7 @@
 const version = "0.1.26";
 
 const canvas = document.querySelector("#glcanvas");
-const gl = canvas.getContext("webgl");
+const gl = canvas.getContext("webgl2");
 if (gl === null) {
     alert("Unable to initialize WebGL. Your browser or machine may not support it.");
 }
@@ -43,16 +43,16 @@ function assert(flag, message) {
 
 function acquireVertexArrayObjectExtension(ctx) {
     // Extension available in WebGL 1 from Firefox 25 and WebKit 536.28/desktop Safari 6.0.3 onwards. Core feature in WebGL 2.
-    var ext = ctx.getExtension('OES_vertex_array_object');
-    if (ext) {
-        ctx['createVertexArray'] = function () { return ext['createVertexArrayOES'](); };
-        ctx['deleteVertexArray'] = function (vao) { ext['deleteVertexArrayOES'](vao); };
-        ctx['bindVertexArray'] = function (vao) { ext['bindVertexArrayOES'](vao); };
-        ctx['isVertexArray'] = function (vao) { return ext['isVertexArrayOES'](vao); };
-    }
-    else {
-        alert("Unable to get OES_vertex_array_object extension");
-    }
+    // var ext = ctx.getExtension('OES_vertex_array_object');
+    // if (ext) {
+    //     ctx['createVertexArray'] = function () { return ext['createVertexArrayOES'](); };
+    //     ctx['deleteVertexArray'] = function (vao) { ext['deleteVertexArrayOES'](vao); };
+    //     ctx['bindVertexArray'] = function (vao) { ext['bindVertexArrayOES'](vao); };
+    //     ctx['isVertexArray'] = function (vao) { return ext['isVertexArrayOES'](vao); };
+    // }
+    // else {
+    //     alert("Unable to get OES_vertex_array_object extension");
+    // }
 }
 
 
@@ -82,9 +82,9 @@ acquireInstancedArraysExtension(gl);
 acquireDisjointTimerQueryExtension(gl);
 
 // https://developer.mozilla.org/en-US/docs/Web/API/WEBGL_depth_texture
-if (gl.getExtension('WEBGL_depth_texture') == null) {
-    alert("Cant initialize WEBGL_depth_texture extension");
-}
+// if (gl.getExtension('WEBGL_depth_texture') == null) {
+//     alert("Cant initialize WEBGL_depth_texture extension");
+// }
 
 function getArray(ptr, arr, n) {
     return new arr(wasm_memory.buffer, ptr, n);
