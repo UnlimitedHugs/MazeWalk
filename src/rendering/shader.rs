@@ -106,7 +106,7 @@ pub fn upload_shaders(
 					panic!("uploading duplicate shader");
 				}
 			}
-			Err(e) => eprintln!("Shader compilation error: {}", e),
+			Err(e) => error!("Shader compilation error: {}", e),
 		}
 	};
 	fn discard_shader(handle: &Handle<Shader>, ctx: &mut ContextResources) {

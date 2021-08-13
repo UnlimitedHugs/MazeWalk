@@ -1,4 +1,5 @@
 use bevy_ecs::{prelude::{Entity, World}, system::{Command, EntityCommands}};
+use crate::prelude::error;
 
 pub struct Children(pub Vec<Entity>);
 
@@ -10,7 +11,7 @@ pub fn despawn_with_children_recursive(world: &mut World, entity: Entity) {
     }
 
     if !world.despawn(entity) {
-        eprintln!("Failed to despawn entity {:?}", entity);
+        error!("Failed to despawn entity {:?}", entity);
     }
 }
 

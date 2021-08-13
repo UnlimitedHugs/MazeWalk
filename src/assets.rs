@@ -130,7 +130,7 @@ impl<T: Component> Assets<T> {
 					path: path_string.clone(),
 					bytes,
 				}),
-				Err(e) => eprintln!("Failed to load {}: {}", path_string, e),
+				Err(e) => error!("Failed to load {}: {}", path_string, e),
 			}),
 		);
 		handle
@@ -184,10 +184,10 @@ fn update_assets<T: Component>(mut assets: ResMut<Assets<T>>, mut evt: EventWrit
 				} = file;
 				match (processor)(bytes) {
 					Ok(value) => assets.insert_asset(&handle, value),
-					Err(e) => eprintln!("Failed to process file {}: {}", path, e),
+					Err(e) => error!("Failed to process file {}: {}", path, e),
 				}
 			} else {
-				eprintln!("No processor for asset type {:?}", type_name::<T>())
+				error!("No processor for asset type {:?}", type_name::<T>())
 			}
 		}
 	}

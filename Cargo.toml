@@ -10,7 +10,7 @@ miniquad = { path = "miniquad" }
 [dependencies]
 bevy_ecs = { path = "../bevy_ecs" }
 glam = "0.17.3"
-miniquad = { path = "miniquad" }
+miniquad = { path = "miniquad", features = ["log-impl"] }
 rand = { version = "0.8", default-features = false, features = ["small_rng"] }
 easer = "0.2.1"
 png = "0.16.8"

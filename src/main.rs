@@ -14,6 +14,7 @@ use prelude::*;
 mod prelude {
 	pub use crate::{app::*, assets::*, backend::*, rendering::*, utils::*};
 	pub use bevy_ecs::prelude::*;
+	pub use miniquad::{warn, error, info};
 }
 
 pub fn main() {
