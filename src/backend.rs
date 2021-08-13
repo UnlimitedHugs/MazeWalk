@@ -2,7 +2,7 @@ use std::collections::HashSet;
 
 use super::app::*;
 use bevy_ecs::prelude::*;
-use miniquad::{conf, date, Context, EventHandlerFree, KeyCode, UserData};
+use miniquad::{Context, EventHandlerFree, KeyCode, UserData, conf::Conf, date};
 
 pub fn plugin(app: &mut AppBuilder) {
 	app.set_runner(runner)
@@ -65,7 +65,8 @@ pub struct MouseScroll {
 pub struct AppExit;
 
 fn runner(mut app: App) {
-	miniquad::start(conf::Conf::default(), |ctx| {
+	let conf = app.world.remove_resource::<Conf>().unwrap_or_default();
+	miniquad::start(conf, |ctx| {
 		app.world
 			.insert_resource(WindowSize::new(ctx.screen_size()));
 		app.world.insert_resource(ctx);

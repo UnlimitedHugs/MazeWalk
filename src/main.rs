@@ -8,7 +8,7 @@ mod maze_gen;
 mod rendering;
 mod utils;
 
-use miniquad::KeyCode;
+use miniquad::{KeyCode, conf::Conf};
 use prelude::*;
 
 mod prelude {
@@ -18,6 +18,13 @@ mod prelude {
 
 pub fn main() {
 	App::new()
+		.insert_resource(Conf {
+			window_width: 1024,
+			window_height: 576,
+			window_title: "Maze Walk".to_string(),
+			sample_count: 2,
+			..Default::default()
+		})
 		.add_plugin(backend::plugin)
 		.add_plugin(rendering::plugin)
 		.add_plugin(maze::plugin)
