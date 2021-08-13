@@ -9,9 +9,13 @@ use crate::maze_gen::{self, GridDirection, GridMaze, GridNode};
 use easer::functions::{Easing, Quad as QuadEase};
 use glam::{ivec2, vec2, vec3, EulerRot, IVec2, Mat4, Quat, Vec2, Vec3};
 use miniquad::{
-	Comparison, Context, CullFace, FilterMode, KeyCode, PipelineParams, TextureWrap, UniformType,
+	date, Comparison, Context, CullFace, FilterMode, KeyCode, PipelineParams, TextureWrap,
+	UniformType,
 };
-use rand::{prelude::*, rngs::StdRng};
+use rand::{
+	prelude::{IteratorRandom, Rng, SliceRandom, SmallRng},
+	SeedableRng,
+};
 use serde_derive::Deserialize;
 
 pub fn plugin(app: &mut AppBuilder) {
@@ -74,7 +78,7 @@ fn preload_assets(
 	mut shaders: ResMut<Assets<Shader>>,
 	mut shader_meta: ResMut<ShaderMetaStore>,
 ) {
-	let mut rng = StdRng::from_entropy();
+	let mut rng = SmallRng::seed_from_u64(date::now() as u64);
 	let shader = shaders.load("assets/shader.glsl");
 
 	#[rustfmt::skip]
@@ -150,7 +154,7 @@ struct MazeAssets {
 	ceiling_tex_normal: Handle<Texture>,
 }
 
-struct Random(StdRng);
+struct Random(SmallRng);
 
 fn init_play_state(
 	mut cmd: Commands,
@@ -158,7 +162,7 @@ fn init_play_state(
 	meshes: ResMut<Assets<Mesh>>,
 	tweaks: Res<Tweaks>,
 ) {
-	let mut rng = StdRng::seed_from_u64(0);
+	let mut rng = SmallRng::seed_from_u64(date::now() as u64);
 	let first_chunk = generate_chunk(
 		&mut cmd,
 		&mut assets,

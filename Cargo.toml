@@ -11,7 +11,7 @@ miniquad = { path = "miniquad" }
 bevy_ecs = { path = "../bevy_ecs" }
 glam = "0.17.3"
 miniquad = { path = "miniquad" }
-rand = "0.8.4"
+rand = { version = "0.8", default-features = false, features = ["small_rng"] }
 easer = "0.2.1"
 png = "0.16.8"
 anyhow = "1.0"
