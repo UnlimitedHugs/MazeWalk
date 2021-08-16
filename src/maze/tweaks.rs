@@ -15,6 +15,8 @@ pub struct Tweaks {
 	pub ceiling_material: Material,
 	pub wall_material: Material,
 	pub floor_material: Material,
+	pub mouse_sensitivity: f32,
+	pub mouse_delta_cap: f32,
 }
 impl Default for Tweaks {
 	fn default() -> Self {
@@ -38,6 +40,8 @@ impl Default for Tweaks {
 				specular_strength: 0.2,
 				shininess: 32.0,
 			},
+			mouse_sensitivity: 0.0045,
+			mouse_delta_cap: 60.,
 		}
 	}
 }

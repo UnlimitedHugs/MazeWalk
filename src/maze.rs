@@ -261,16 +261,17 @@ fn camera_look_input(
 	mut q: Query<&mut RotationEuler, With<Camera>>,
 	mut mouse_move: EventReader<MouseMove>,
 	control_mode: Res<ControlMode>,
+	tweaks: Res<Tweaks>,
 ) {
 	if *control_mode != ControlMode::Manual && *control_mode != ControlMode::Hover {
 		return;
 	}
 	let mut euler = q.single_mut().unwrap();
-	let mouse_sensitivity = 0.006f32;
 	let pitch_limit = 90.0f32.to_radians() * 0.99;
+	let clamp = |f:&f32| f.clamp(-tweaks.mouse_delta_cap, tweaks.mouse_delta_cap);
 	for MouseMove { dx, dy } in mouse_move.iter() {
-		euler.yaw -= dx * mouse_sensitivity;
-		euler.pitch = (euler.pitch - dy * mouse_sensitivity).clamp(-pitch_limit, pitch_limit);
+		euler.yaw -= clamp(dx) * tweaks.mouse_sensitivity;
+		euler.pitch = (euler.pitch - clamp(dy) * tweaks.mouse_sensitivity).clamp(-pitch_limit, pitch_limit);
 	}
 }
 
