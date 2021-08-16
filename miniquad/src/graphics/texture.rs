@@ -90,6 +90,7 @@ impl Default for TextureParams {
             format: TextureFormat::RGBA8,
             wrap: TextureWrap::Clamp,
             filter: FilterMode::Linear,
+            anisotropy: 0.0,
             width: 0,
             height: 0,
         }
@@ -126,6 +127,7 @@ pub struct TextureParams {
     pub format: TextureFormat,
     pub wrap: TextureWrap,
     pub filter: FilterMode,
+    pub anisotropy: f32,
     pub width: u32,
     pub height: u32,
 }
@@ -191,6 +193,18 @@ impl Texture {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, params.wrap as i32);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, params.filter as i32);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, params.filter as i32);
+            
+            if params.anisotropy > 0.0 {
+                #[cfg(windows)] {
+                    glTexParameterf(
+                        GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
+                        params.anisotropy.min(sapp::get_max_aniso_level())
+                    );
+                }
+                #[cfg(not(windows))] {
+                    println!("WARNING: anisotropic filtering not implemented on this platform");
+                }
+            }
         }
         ctx.cache.restore_texture_binding(0);
 
@@ -220,6 +234,7 @@ impl Texture {
                 format: TextureFormat::RGBA8,
                 wrap: TextureWrap::Clamp,
                 filter: FilterMode::Linear,
+                anisotropy: 0.0,
             },
         )
     }

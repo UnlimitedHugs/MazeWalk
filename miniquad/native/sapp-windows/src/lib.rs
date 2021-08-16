@@ -286,6 +286,7 @@ pub struct sapp_desc {
     pub html5_ask_leave_site: bool,
     pub ios_keyboard_resizes_canvas: bool,
     pub gl_force_gles2: bool,
+    pub max_aniso_supported: f32,
 }
 
 #[derive(Clone)]
@@ -435,6 +436,7 @@ static mut _sapp: _sapp_state = _sapp_state {
         html5_ask_leave_site: false,
         ios_keyboard_resizes_canvas: false,
         gl_force_gles2: false,
+        max_aniso_supported: 0.0,
     },
     keycodes: [sapp_keycode_SAPP_KEYCODE_INVALID; 512],
 };
@@ -617,6 +619,10 @@ pub unsafe fn sapp_set_fullscreen(fullscreen: bool) {
     }
 
     ShowWindow(_sapp_win32_hwnd, SW_SHOW);
+}
+
+pub unsafe fn get_max_aniso_level() -> f32 {
+    _sapp.desc.max_aniso_supported
 }
 
 unsafe fn _sapp_init_event(type_: sapp_event_type) {
@@ -1383,6 +1389,27 @@ unsafe fn wgl_load_extensions() {
     _sapp_wglDeleteContext.unwrap()(rc);
 }
 
+unsafe fn _sapp_gl_ext_supported(ext: &str) -> bool {
+    let mut num_extensions: GLint = 0;
+    glGetIntegerv(gl::GL_NUM_EXTENSIONS, &mut num_extensions as *mut _);
+    for i in 0..num_extensions {
+        let str_ptr = glGetStringi(GL_EXTENSIONS, i as u32);
+        if !str_ptr.is_null() {
+            let ext_name = std::ffi::CStr::from_ptr(str_ptr as *const i8).to_string_lossy();
+            if ext_name == ext {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+unsafe fn check_gl_extensions() {
+    if _sapp_gl_ext_supported("GL_EXT_texture_filter_anisotropic") {
+         glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &mut _sapp.desc.max_aniso_supported);
+    }
+}
+
 #[derive(Copy, Clone)]
 pub struct _sapp_gl_fbconfig {
     pub red_bits: i32,
@@ -1729,6 +1756,8 @@ pub unsafe fn sapp_run(desc: *const sapp_desc) -> i32 {
     wgl_create_context();
 
     gl::load_gl_funcs();
+    
+    check_gl_extensions();
 
     _sapp.valid = true;
 

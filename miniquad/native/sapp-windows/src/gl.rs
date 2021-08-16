@@ -114,6 +114,8 @@ pub const GL_ONE_MINUS_CONSTANT_COLOR: u32 = 0x8002;
 pub const GL_TEXTURE_WRAP_T: u32 = 0x2803;
 pub const GL_TEXTURE_WRAP_S: u32 = 0x2802;
 pub const GL_TEXTURE_MIN_FILTER: u32 = 0x2801;
+pub const GL_TEXTURE_MAX_ANISOTROPY_EXT: u32 = 0x84FE;
+pub const GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT: u32 = 0x84FF;
 pub const GL_LINEAR_MIPMAP_NEAREST: u32 = 0x2701;
 pub const GL_EXTENSIONS: u32 = 0x1F03;
 pub const GL_NO_ERROR: u32 = 0;
@@ -568,6 +570,7 @@ gl_loader!(
     ) -> (),
     fn glTexParameteri(target: GLenum, pname: GLenum, param: GLint) -> (),
     fn glGetIntegerv(pname: GLenum, params: *mut GLint) -> (),
+    fn glGetFloatv(pname: GLenum, params: *mut GLfloat) -> (),
     fn glEnable(cap: GLenum) -> (),
     fn glBlitFramebuffer(
         srcX0: GLint,
