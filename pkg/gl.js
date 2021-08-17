@@ -35,6 +35,25 @@ document.exitPointerLock = document.exitPointerLock ||
     // pointer lock in any form is not supported on iOS safari
     (function () {});
 
+var pointer_locked = false;
+var pointer_lock_desired = false;
+document.addEventListener("pointerlockchange", function() {
+    pointer_locked = !!document.pointerLockElement;
+    restore_cursor_visibility();
+});
+document.addEventListener("pointerlockerror", function() {
+    pointer_locked = false;
+    restore_cursor_visibility();
+});
+document.addEventListener("fullscreenchange", function() {
+    if(pointer_lock_desired) {
+        canvas.requestPointerLock();
+    }
+});
+function restore_cursor_visibility() {
+    canvas.style.cursor = "auto";
+}
+
 function assert(flag, message) {
     if (flag == false) {
         alert(message)
@@ -1074,8 +1093,7 @@ var importObject = {
                 // TODO: do not send mouse_move when cursor is captured
                 wasm_exports.mouse_move(Math.floor(x), Math.floor(y));
 
-                // TODO: check that mouse is captured?
-                if (event.movementX != 0 || event.movementY != 0) {
+                if (pointer_locked && (event.movementX != 0 || event.movementY != 0)) {
                     wasm_exports.raw_mouse_move(Math.floor(event.movementX), Math.floor(event.movementY));
                 }
             };
@@ -1100,6 +1118,9 @@ var importObject = {
 
                 var btn = into_sapp_mousebutton(event.button);
                 wasm_exports.mouse_up(x, y, btn);
+                if(pointer_lock_desired) {
+                    canvas.requestPointerLock();
+                }
             };
             canvas.onkeydown = function (event) {
                 var sapp_key_code = into_sapp_keycode(event.code);
@@ -1256,8 +1277,10 @@ var importObject = {
         },
         sapp_set_cursor_grab: function (grab) {
             if (grab) {
+                pointer_lock_desired = true;
                 canvas.requestPointerLock();
             } else {
+                pointer_lock_desired = false;
                 document.exitPointerLock();
             }
         },
