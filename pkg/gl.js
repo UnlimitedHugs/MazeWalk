@@ -23,6 +23,8 @@ var wasm_memory;
 
 var high_dpi = false;
 
+var anisotropy_extension = null;
+
 canvas.focus();
 
 canvas.requestPointerLock = canvas.requestPointerLock ||
@@ -96,9 +98,16 @@ function acquireDisjointTimerQueryExtension(ctx) {
     }
 }
 
+function acquireAnisotropyExtension(ctx) {
+    anisotropy_extension = gl.getExtension('EXT_texture_filter_anisotropic')
+        || gl.getExtension('MOZ_EXT_texture_filter_anisotropic')
+        || gl.getExtension('WEBKIT_EXT_texture_filter_anisotropic');
+}
+
 acquireVertexArrayObjectExtension(gl);
 acquireInstancedArraysExtension(gl);
 acquireDisjointTimerQueryExtension(gl);
+acquireAnisotropyExtension(gl);
 
 // https://developer.mozilla.org/en-US/docs/Web/API/WEBGL_depth_texture
 // if (gl.getExtension('WEBGL_depth_texture') == null) {
@@ -1303,6 +1312,13 @@ var importObject = {
             canvas.width = new_width;
             canvas.height = new_height;
             resize(canvas, wasm_exports.resize);
+        },
+        sapp_set_texture_anisotropy_level: function(aniso) {
+            if (anisotropy_extension){
+                var max_supported = gl.getParameter(anisotropy_extension.MAX_TEXTURE_MAX_ANISOTROPY_EXT);
+                aniso = Math.min(aniso, max_supported);
+                gl.texParameterf(gl.TEXTURE_2D, anisotropy_extension.TEXTURE_MAX_ANISOTROPY_EXT, aniso);
+            }
         }
     }
 };

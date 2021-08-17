@@ -357,6 +357,11 @@ extern "C" {
     pub fn sapp_set_fullscreen(fullscreen: bool);
     pub fn sapp_is_fullscreen() -> bool;
     pub fn sapp_set_window_size(new_width: u32, new_height: u32);
+    pub fn sapp_set_texture_anisotropy_level(aniso: f32);
+}
+
+pub unsafe fn set_texture_aniso_level(aniso: f32) {
+    sapp_set_texture_anisotropy_level(aniso);
 }
 
 pub unsafe fn sapp_show_mouse(shown: bool) {

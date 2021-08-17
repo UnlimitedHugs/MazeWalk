@@ -621,8 +621,11 @@ pub unsafe fn sapp_set_fullscreen(fullscreen: bool) {
     ShowWindow(_sapp_win32_hwnd, SW_SHOW);
 }
 
-pub unsafe fn get_max_aniso_level() -> f32 {
-    _sapp.desc.max_aniso_supported
+pub unsafe fn set_texture_aniso_level(aniso: f32) {
+    let max = _sapp.desc.max_aniso_supported;
+    if max > 0.0 {
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, aniso.min(max));
+    }
 }
 
 unsafe fn _sapp_init_event(type_: sapp_event_type) {

@@ -193,16 +193,12 @@ impl Texture {
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, params.wrap as i32);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, params.filter as i32);
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, params.filter as i32);
-            
             if params.anisotropy > 0.0 {
-                #[cfg(windows)] {
-                    glTexParameterf(
-                        GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT,
-                        params.anisotropy.min(sapp::get_max_aniso_level())
-                    );
-                }
-                #[cfg(not(windows))] {
-                    println!("WARNING: anisotropic filtering not implemented on this platform");
+                #[cfg(any(windows, target_arch = "wasm32"))]
+                sapp::set_texture_aniso_level(params.anisotropy);
+                #[cfg(not(any(windows, target_arch = "wasm32")))] {
+                    #[cfg(feature = "log-impl")]
+                    super::super::warn!("Anisotropic filtering not implemented on this platform");
                 }
             }
         }
