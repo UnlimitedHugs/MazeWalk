@@ -81,17 +81,17 @@ pub struct Assets<T: Component> {
 	values: HashMap<HandleId, T>,
 	last_id: HandleId,
 	pending_created_events: Vec<Handle<T>>,
-	pending_loaded_files: Arc<Mutex<Vec<LoadedFile<T>>>>,
+	loading_files: Arc<Mutex<Vec<PendingAsset<T>>>>,
 	processor: Option<Processor<T>>,
 	loader: Box<dyn FileLoader>,
 }
 
 pub type Processor<T> = Box<dyn Fn(Vec<u8>) -> Result<T, String> + Send + Sync>;
 
-struct LoadedFile<T> {
+struct PendingAsset<T> {
 	handle: Handle<T>,
 	path: String,
-	bytes: Vec<u8>,
+	bytes: Option<Vec<u8>>,
 }
 
 impl<T: Component> Assets<T> {
@@ -101,7 +101,7 @@ impl<T: Component> Assets<T> {
 			values: HashMap::new(),
 			last_id: 0,
 			pending_created_events: vec![],
-			pending_loaded_files: Default::default(),
+			loading_files: Default::default(),
 			processor: None,
 			loader: Box::new(loader),
 		}
@@ -120,20 +120,37 @@ impl<T: Component> Assets<T> {
 	pub fn load(&mut self, path: &str) -> Handle<T> {
 		let handle = self.create_handle();
 		let handle_clone = handle.clone();
+		let handle_id = handle.id();
 		let path_string = path.to_string();
-		let files = Arc::clone(&self.pending_loaded_files);
+		self.loading_files.lock().unwrap().push(PendingAsset {
+			handle: handle_clone,
+			path: path_string,
+			bytes: None,
+		});
+		let files = Arc::clone(&self.loading_files);
 		self.loader.load(
 			path,
-			Box::new(move |result| match result {
-				Ok(bytes) => files.lock().unwrap().push(LoadedFile {
-					handle: handle_clone.clone(),
-					path: path_string.clone(),
-					bytes,
-				}),
-				Err(e) => error!("Failed to load {}: {}", path_string, e),
+			Box::new(move |result| {
+				let mut files_guard = files.lock().unwrap();
+				let file_index = files_guard
+					.iter()
+					.position(|f| f.handle.id() == handle_id)
+					.expect("unknown loaded asset");
+				let file = &mut files_guard[file_index];
+				match result {
+					Ok(bytes) => file.bytes = Some(bytes),
+					Err(e) => {
+						let file = files_guard.remove(file_index);
+						error!("Failed to load {}: {}", file.path, e)
+					}
+				}
 			}),
 		);
 		handle
+	}
+
+	pub fn everything_loaded(&self) -> bool {
+		self.loading_files.lock().unwrap().is_empty()
 	}
 
 	fn create_handle(&mut self) -> Handle<T> {
@@ -158,31 +175,39 @@ impl<T: Component> Assets<T> {
 }
 
 trait FileLoader: Send + Sync + 'static {
-	fn load(&self, path: &str, callback: Box<dyn Fn(Result<Vec<u8>, String>)>);
+	fn load(&mut self, path: &str, callback: LoaderCallback);
 }
+type LoaderCallback = Box<dyn Fn(Result<Vec<u8>, String>) + Send + Sync + 'static>;
 
 struct MiniquadFileLoader;
 impl FileLoader for MiniquadFileLoader {
-	fn load(&self, path: &str, callback: Box<dyn Fn(Result<Vec<u8>, String>)>) {
+	fn load(&mut self, path: &str, callback: LoaderCallback) {
 		miniquad::fs::load_file(path, move |res| callback(res.map_err(|e| e.to_string())))
 	}
 }
 
 fn update_assets<T: Component>(mut assets: ResMut<Assets<T>>, mut evt: EventWriter<AssetEvent<T>>) {
-	let loaded_files: Option<Vec<LoadedFile<T>>> = {
-		let mut loaded_files = assets.pending_loaded_files.lock().unwrap();
-		(loaded_files.len() > 0).then(|| loaded_files.drain(..).collect::<Vec<_>>())
+	let loaded_files: Option<Vec<PendingAsset<T>>> = {
+		let mut files = assets.loading_files.lock().unwrap();
+		let mut loaded_files = Option::<Vec<PendingAsset<T>>>::None;
+		for i in (0..files.len()).rev() {
+			if files[i].bytes.is_some() {
+				loaded_files = Some(loaded_files.unwrap_or_else(|| vec![]));
+				loaded_files.as_mut().unwrap().push(files.remove(i));
+			}
+		}
+		loaded_files
 	};
 
 	if let Some(files) = loaded_files {
 		for file in files.into_iter() {
 			if let Some(processor) = &assets.processor {
-				let LoadedFile {
+				let PendingAsset {
 					handle,
 					path,
 					bytes,
 				} = file;
-				match (processor)(bytes) {
+				match (processor)(bytes.unwrap()) {
 					Ok(value) => assets.insert_asset(&handle, value),
 					Err(e) => error!("Failed to process file {}: {}", path, e),
 				}
@@ -237,8 +262,12 @@ mod tests {
 			.collect::<Vec<_>>()
 	}
 
-	fn assets(a: &mut App) -> Mut<Assets<i32>> {
+	fn assets_i(a: &mut App) -> Mut<Assets<i32>> {
 		a.world.get_resource_mut::<Assets<i32>>().unwrap()
+	}
+
+	fn assets_s(app: &mut App) -> Mut<Assets<String>> {
+		app.world.get_resource_mut::<Assets<String>>().unwrap()
 	}
 
 	#[test]
@@ -265,10 +294,10 @@ mod tests {
 			.insert_resource(IntEvents::default())
 			.add_system_to_stage(CoreStage::AssetEvents, log_events.system())
 			.build();
-		let _one = assets(app).add(1);
+		let _one = assets_i(app).add(1);
 		{
-			let _two = assets(app).add(2);
-			let _three = assets(app).add(3);
+			let _two = assets_i(app).add(2);
+			let _three = assets_i(app).add(3);
 			app.dispatch_update();
 			assert_eq!(read(app), &[1, 2, 3], "frame 1");
 		}
@@ -281,16 +310,12 @@ mod tests {
 	fn file_loading() {
 		struct TestLoader;
 		impl FileLoader for TestLoader {
-			fn load(&self, path: &str, callback: Box<dyn Fn(Result<Vec<u8>, String>)>) {
+			fn load(&mut self, path: &str, callback: LoaderCallback) {
 				if path != "test_file" {
 					panic!()
 				}
 				callback(Ok("contents".into()));
 			}
-		}
-
-		fn assets(app: &mut App) -> Mut<Assets<String>> {
-			app.world.get_resource_mut::<Assets<String>>().unwrap()
 		}
 
 		let mut app = App::new()
@@ -302,11 +327,54 @@ mod tests {
 				))
 			})
 			.build();
-		let handle = assets(&mut app).load("test_file");
+		let handle = assets_s(&mut app).load("test_file");
+		assert_eq!(assets_s(&mut app).everything_loaded(), false);
 		app.dispatch_update();
+		assert_eq!(assets_s(&mut app).everything_loaded(), true);
 		assert_eq!(
-			*assets(&mut app).get(&handle).unwrap(),
+			*assets_s(&mut app).get(&handle).unwrap(),
 			"contents processed"
 		);
+	}
+
+	#[test]
+	fn delayed_loading() {
+		fn assert_loaded(app: &mut App, loaded: bool, label: &str) {
+			assert_eq!(assets_s(app).everything_loaded(), loaded, "{}", label);
+		}
+		
+		let callbacks: Arc<Mutex<Vec<LoaderCallback>>> = Default::default();
+		struct TestLoader(Arc<Mutex<Vec<LoaderCallback>>>);
+		impl FileLoader for TestLoader {
+			fn load(&mut self, _path: &str, callback: LoaderCallback) {
+				self.0.lock().unwrap().push(callback);
+			}
+		}
+
+		let app = &mut App::new()
+			.add_asset_type_with_loader::<String, _>(TestLoader(Arc::clone(&callbacks)))
+			.use_asset_processor(|_|Ok(String::new()))
+			.build();
+
+		assert_loaded(app, true, "0");
+		
+		let handle_one = assets_s(app).load("one");
+		let handle_two = assets_s(app).load("two");
+
+		assert_loaded(app, false, "1");
+		app.dispatch_update();
+		assert_loaded(app, false, "2");
+		
+		// invoke loaded callbacks
+		(callbacks.lock().unwrap()[0])(Ok(vec![]));
+		(callbacks.lock().unwrap()[1])(Err(String::new()));
+
+		assert_loaded(app, false, "3");
+
+		app.dispatch_update();
+
+		assert_loaded(app, true, "4");
+		assert!(assets_s(app).get(&handle_one).is_some());
+		assert!(assets_s(app).get(&handle_two).is_none());
 	}
 }

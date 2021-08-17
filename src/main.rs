@@ -14,6 +14,7 @@ use prelude::*;
 mod prelude {
 	pub use crate::{app::*, assets::*, backend::*, rendering::*, utils::*};
 	pub use bevy_ecs::prelude::*;
+	pub use crate::app::State;
 	pub use miniquad::{warn, error, info};
 }
 
@@ -37,4 +38,9 @@ fn quit_on_esc(input: Res<Keyboard>, mut exit: EventWriter<AppExit>) {
 	if input.was_just_pressed(KeyCode::Escape) {
 		exit.send(AppExit {});
 	}
+}
+
+#[cfg(target_arch = "wasm32")]
+extern "C" {
+	pub fn maze_assets_loaded();
 }

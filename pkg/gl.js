@@ -1319,6 +1319,9 @@ var importObject = {
                 aniso = Math.min(aniso, max_supported);
                 gl.texParameterf(gl.TEXTURE_2D, anisotropy_extension.TEXTURE_MAX_ANISOTROPY_EXT, aniso);
             }
+        },
+        maze_assets_loaded: function() {
+            document.dispatchEvent(new CustomEvent("assets_loaded"));
         }
     }
 };

@@ -21,7 +21,7 @@ use serde_derive::Deserialize;
 pub fn plugin(app: &mut AppBuilder) {
 	#[rustfmt::skip]
 	app
-		.add_plugin(tweaks::plugin)
+		.insert_resource(Tweaks::default())
 		.insert_resource(RenderSettings {
 			pipeline: PipelineParams {
 				depth_test: Comparison::LessOrEqual,
@@ -37,7 +37,7 @@ pub fn plugin(app: &mut AppBuilder) {
 		.add_startup_system(preload_assets.system())
 		.add_system_stateful(
 			CoreStage::PreUpdate, AppState::Preload,
-			tweaks::wait_for_tweaks_ready.system()
+			wait_for_assets_loaded.system()
 		)
 		.on_enter_state(AppState::Play, init_play_state.system())
 		.add_system_list(
@@ -55,7 +55,6 @@ pub fn plugin(app: &mut AppBuilder) {
 				.with(read_control_mode_input.system())
 				.with(update_mouse_lock.system())
 				.with(toggle_fullscreen.system())
-				.with(tweaks::restart_on_tweaks_changed.system())
 		)
 		.on_exit_state(AppState::Play, reset_play_state.system())
 		.add_system_list(
@@ -155,6 +154,20 @@ struct MazeAssets {
 }
 
 struct Random(SmallRng);
+
+fn wait_for_assets_loaded(
+	mut state: ResMut<State>,
+	textures: Res<Assets<Texture>>,
+	shaders: Res<Assets<Shader>>,
+) {
+	if textures.everything_loaded() && shaders.everything_loaded() {
+		state.schedule_transition(AppState::Play);
+		#[cfg(target_arch = "wasm32")]
+		unsafe {
+			crate::maze_assets_loaded();
+		}
+	}
+}
 
 fn init_play_state(
 	mut cmd: Commands,
