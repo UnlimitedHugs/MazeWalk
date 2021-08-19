@@ -8,6 +8,7 @@
 				margin: 0;
 				background-color: #333333;
 				font-family: Trebuchet MS, Verdana, Tahoma, sans-serif;
+				overflow: hidden;
 			}
 
 			#glcanvas {
@@ -22,12 +23,17 @@
 				height: 100%;
 				align-items: center;
 				justify-content: space-around;
+				pointer-events: none;
 			}
 
 			.box {
 				background-color: #00000088;
 				border-radius: 0.2em;
 				padding: 1em 1.2em;
+				color: #cccccc;
+			}
+
+			#loading {
 				color: white;
 			}
 
@@ -39,6 +45,28 @@
 
 			#dots-inner {
 				animation: 0.5s ease-in-out slide-dots infinite paused;
+			}
+
+			#help {
+				position: absolute;
+				margin: 1em;
+				left: 0;
+				bottom: 0;
+				pointer-events: all;
+			}
+
+			td:first-child {
+				padding-right: .2em;
+			}
+
+			em {
+				font-weight: inherit;
+				font-style: normal;
+				color: white;
+			}
+
+			a {
+				text-decoration-color: white;
 			}
 
 			.visible {
@@ -74,24 +102,38 @@
 					<div id="dots-inner">...</div>
 				</span>
 			</div>
+			<div id="help" class="box hidden">
+				<em>[F1]</em> Show/hide help<br />
+				<em>[F]</em> Fullscreen mode<br />
+				<em>[Space]</em> Toggle manual control<br />
+				<em>[WASD + Mouse]</em> Manual controls<br />
+				<br />
+				<a href="https://github.com/UnlimitedHugs/MazeWalk/"><em>[Source code]</em></a>
+			</div>
 		</div>
 		<canvas id="glcanvas" tabindex='1'></canvas>
 		<script src="./gl.js"></script>
 		<script>
 			load("maze_walk.wasm");
-			
-			initDotsAnimation();
-			toggleLoadingBox(true);
-			document.addEventListener("assets_loaded", () => {
-				toggleLoadingBox(false);
-			});
+
+			initLoadingBox();
+			initHelpBox();
 
 			function toggleLoadingBox(show) {
-				let classes = document.getElementById("loading").classList;
+				toggleBox("loading", show);
+			}
+
+			function toggleHelpBox(show) {
+				toggleBox("help", show);
+			}
+
+			function toggleBox(id, show) {
+				let classes = document.getElementById(id).classList;
 				classes.remove("hidden", "visible");
 				classes.add(show ? "visible" : "hidden");
 			}
-			function initDotsAnimation() {
+
+			function initLoadingBox() {
 				var dotsParent = document.getElementById("loading-dots");
 				var dotsWidth = dotsParent.clientWidth;
 				dotsParent.style.width = dotsWidth;
@@ -99,6 +141,61 @@
 				var dotsInner = document.getElementById("dots-inner")
 				dotsInner.innerHTML += "..";
 				dotsInner.style.animationPlayState = "running";
+
+				toggleLoadingBox(true);
+				document.addEventListener("assets_loaded", () => {
+					toggleLoadingBox(false);
+				});
+			}
+
+			function initHelpBox() {
+				var storageKey = "lastVisit";
+				var visitExpiration = 1000 * 60 * 24 * 14;
+				var openedManually = false;
+				var lastVisit = parseInt(localStorage[storageKey], 10);
+				var isFirstVisit = isNaN(lastVisit) || lastVisit < Date.now() - visitExpiration;
+				var closeTimeout = undefined;
+				localStorage[storageKey] = Date.now();
+				document.addEventListener("keydown", function (event) {
+					if (event.key === "F1") {
+						toggleHelpBox(!helpBoxIsVisible());
+						openedManually = true;
+						if (closeTimeout) {
+							clearTimeout(closeTimeout);
+						}
+					}
+				});
+
+				var helpBox = document.getElementById("help");
+				var hovering = false;
+				helpBox.onmouseenter = function () {
+					hovering = true;
+				};
+				helpBox.onmouseleave = function () {
+					hovering = false;
+				};
+
+				if (isFirstVisit) {
+					toggleHelpBox(true);
+					setHelpCloseTimeout(12000);
+				}
+
+				function setHelpCloseTimeout(time) {
+					closeTimeout = setTimeout(function () {
+						closeTimeout = undefined;
+						if (hovering) {
+							setHelpCloseTimeout(1000);
+						} else {
+							if (!openedManually) {
+								toggleHelpBox(false);
+							}
+						}
+					}, time);
+				}
+			}
+
+			function helpBoxIsVisible() {
+				return document.getElementById("help").classList.contains("visible");
 			}
 		</script>
 	</body>
