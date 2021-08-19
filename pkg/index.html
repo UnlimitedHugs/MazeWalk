@@ -6,20 +6,100 @@
 		<style>
 			body {
 				margin: 0;
+				background-color: #333333;
+				font-family: Trebuchet MS, Verdana, Tahoma, sans-serif;
 			}
+
 			#glcanvas {
-				width: 100%;	
-				height: 100%;	
+				width: 100%;
+				height: 100%;
+			}
+
+			#overlay {
+				position: absolute;
+				display: flex;
+				width: 100%;
+				height: 100%;
+				align-items: center;
+				justify-content: space-around;
+			}
+
+			.box {
+				background-color: #00000088;
+				border-radius: 0.2em;
+				padding: 1em 1.2em;
+				color: white;
+			}
+
+			#loading-dots {
+				display: inline-block;
+				vertical-align: text-top;
+				overflow: hidden;
+			}
+
+			#dots-inner {
+				animation: 0.5s ease-in-out slide-dots infinite paused;
+			}
+
+			.visible {
+				visibility: visible;
+				transform: translateY(0);
+				opacity: 1;
+				transition: all ease-out 0.25s;
+			}
+
+			.hidden {
+				visibility: hidden;
+				transform: translateY(50%);
+				opacity: 0;
+				transition: all ease-in 0.25s;
+			}
+
+			@keyframes slide-dots {
+				from {
+					transform: translateX(-33.33%);
+				}
+
+				to {
+					transform: 0;
+				}
 			}
 		</style>
 	</head>
 
 	<body>
+		<div id="overlay">
+			<div id="loading" class="box hidden">Loading
+				<span id="loading-dots">
+					<div id="dots-inner">...</div>
+				</span>
+			</div>
+		</div>
 		<canvas id="glcanvas" tabindex='1'></canvas>
 		<script src="./gl.js"></script>
 		<script>
 			load("maze_walk.wasm");
-			document.addEventListener("assets_loaded", () => console.log("loaded"));
+			
+			initDotsAnimation();
+			toggleLoadingBox(true);
+			document.addEventListener("assets_loaded", () => {
+				toggleLoadingBox(false);
+			});
+
+			function toggleLoadingBox(show) {
+				let classes = document.getElementById("loading").classList;
+				classes.remove("hidden", "visible");
+				classes.add(show ? "visible" : "hidden");
+			}
+			function initDotsAnimation() {
+				var dotsParent = document.getElementById("loading-dots");
+				var dotsWidth = dotsParent.clientWidth;
+				dotsParent.style.width = dotsWidth;
+				dotsParent.style.height = dotsWidth;
+				var dotsInner = document.getElementById("dots-inner")
+				dotsInner.innerHTML += "..";
+				dotsInner.style.animationPlayState = "running";
+			}
 		</script>
 	</body>
 
