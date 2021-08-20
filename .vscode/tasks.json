@@ -1,0 +1,102 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"type": "cargo",
+			"command": "run",
+			"problemMatcher": [
+				"$rustc"
+			],
+			"label": "rust: cargo run",
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+			"type": "cargo",
+			"command": "test",
+			"problemMatcher": [
+				"$rustc"
+			],
+			"group": {
+				"kind": "test",
+				"isDefault": true
+			},
+			"label": "rust: cargo test"
+		},
+		{
+			"type": "cargo",
+			"command": "test",
+			"args": [
+				"--",
+				"--test-threads=1",
+				"--nocapture"
+			],
+			"problemMatcher": [
+				"$rustc"
+			],
+			"label": "rust: cargo test nocapture"
+		},
+		{
+			"type": "cargo",
+			"command": "build",
+			"args": [
+				"--release",
+				"--no-default-features",
+			],
+			"problemMatcher": [
+				"$rustc"
+			],
+			"label": "rust: build release"
+		},
+		{
+			"label": "rust: build wasm (release)",
+			"type": "cargo",
+			"command": "build",
+			"args": [
+				"--target",
+				"wasm32-unknown-unknown",
+				"--release"
+			],
+			"problemMatcher": [
+				"$rustc"
+			]
+		},
+		{
+			"label": "deploy wasm (release)",
+			"type": "shell",
+			"command": "cp",
+			"args": [
+				"./target/wasm32-unknown-unknown/release/${workspaceFolderBasename}.wasm",
+				"./pkg/${workspaceFolderBasename}.wasm"
+			],
+			"dependsOn": [
+				"rust: build wasm (release)"
+			],
+			"problemMatcher": []
+		},
+		{
+			"label": "serve wasm",
+			"type": "shell",
+			"command": "penguin",
+			"args": [
+				"serve",
+				"./pkg",
+			],
+			"problemMatcher": []
+		},
+		{
+			"label": "optimize wasm",
+			"type": "shell",
+			"command": "wasm-opt",
+			"args": [
+				"pkg/maze_walk.wasm",
+				"-o",
+				"pkg/maze_walk.wasm",
+				"-O4",
+			],
+			"problemMatcher": []
+		},
+	]
+}
