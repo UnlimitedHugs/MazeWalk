@@ -1,4 +1,4 @@
-use bevy_ecs::component::Component;
+use bevy_ecs_wasm::component::Component;
 use std::{
 	any::type_name,
 	collections::HashMap,

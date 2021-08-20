@@ -13,22 +13,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cdb031dd78e28731d87d56cc8ffef4a8f36ca26c38fe2de700543e627f8a464a"
 
 [[package]]
-name = "bevy_ecs"
+name = "bevy_ecs_macros"
 version = "0.5.0"
+source = "git+https://github.com/UnlimitedHugs/bevy-ecs-wasm#72e1d7b71ce1cf08f59cadc7f7968233f99a7cf4"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
+name = "bevy_ecs_wasm"
+version = "0.5.0"
+source = "git+https://github.com/UnlimitedHugs/bevy-ecs-wasm#72e1d7b71ce1cf08f59cadc7f7968233f99a7cf4"
 dependencies = [
  "bevy_ecs_macros",
  "downcast-rs",
  "fixedbitset",
  "thiserror",
-]
-
-[[package]]
-name = "bevy_ecs_macros"
-version = "0.5.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]
@@ -123,7 +125,7 @@ checksum = "7fb9b38af92608140b86b693604b9ffcc5824240a484d1ecd4795bacb2fe88f3"
 name = "maze_walk"
 version = "0.1.0"
 dependencies = [
- "bevy_ecs",
+ "bevy_ecs_wasm",
  "easer",
  "glam",
  "miniquad",

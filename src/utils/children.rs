@@ -1,4 +1,4 @@
-use bevy_ecs::{prelude::{Entity, World}, system::{Command, EntityCommands}};
+use bevy_ecs_wasm::{prelude::{Entity, World}, system::{Command, EntityCommands}};
 use crate::prelude::error;
 
 pub struct Children(pub Vec<Entity>);

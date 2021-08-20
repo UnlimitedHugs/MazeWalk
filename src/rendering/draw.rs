@@ -1,6 +1,6 @@
 use super::{mesh::Mesh, shader::Shader, TextureBindings};
 use crate::prelude::*;
-use bevy_ecs::component::Component;
+use bevy_ecs_wasm::component::Component;
 use miniquad::{Bindings, Buffer, Context, PassAction, Pipeline, Texture as ContextTexture};
 use std::collections::HashMap;
 

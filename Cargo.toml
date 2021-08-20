@@ -4,11 +4,8 @@ version = "0.1.0"
 authors = ["UnlimitedHugs <unlimitedhugs@protonmail.com>"]
 edition = "2018"
 
-[patch."https://github.com/not-fl3/miniquad.git"]
-miniquad = { path = "miniquad" }
-
 [dependencies]
-bevy_ecs = { path = "../bevy_ecs" }
+bevy_ecs_wasm = { git = "https://github.com/UnlimitedHugs/bevy-ecs-wasm" }
 glam = "0.17.3"
 miniquad = { path = "miniquad", features = ["log-impl"] }
 rand = { version = "0.8", default-features = false, features = ["small_rng"] }

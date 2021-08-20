@@ -1,4 +1,4 @@
-use bevy_ecs::{archetype::ArchetypeGeneration, component::Component, prelude::*};
+use bevy_ecs_wasm::{archetype::ArchetypeGeneration, component::Component, prelude::*};
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
 pub enum CoreStage {

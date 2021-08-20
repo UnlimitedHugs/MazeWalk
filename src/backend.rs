@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 
-use super::app::*;
-use bevy_ecs::prelude::*;
+use crate::prelude::*;
 use miniquad::{Context, EventHandlerFree, KeyCode, UserData, conf::Conf, date};
 
 pub fn plugin(app: &mut AppBuilder) {

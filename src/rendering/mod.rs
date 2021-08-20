@@ -5,7 +5,7 @@ mod shader;
 mod texture;
 
 use crate::prelude::*;
-use bevy_ecs::component::Component;
+use bevy_ecs_wasm::component::Component;
 pub use camera::{Camera, CameraBundle, ProjectionMatrix, ViewMatrix};
 pub use mesh::{Mesh, Vertex};
 use miniquad::PipelineParams;
