@@ -78,7 +78,7 @@ fn preload_assets(
 	mut shader_meta: ResMut<ShaderMetaStore>,
 ) {
 	let mut rng = SmallRng::seed_from_u64(date::now() as u64);
-	let shader = shaders.load("assets/shader.glsl");
+	let shader = shaders.load("shader.glsl");
 
 	#[rustfmt::skip]
 	shader_meta.set(&shader,
@@ -121,12 +121,12 @@ fn preload_assets(
 		filter: FilterMode::Linear,
 		anisotropy: 8.0,
 	});
-	let wall_tex_diffuse = textures.load("assets/wall_diffuse.png");
-	let wall_tex_normal = textures.load("assets/wall_normal.png");
-	let floor_tex_diffuse = textures.load("assets/tiles_diffuse.png");
-	let floor_tex_normal = textures.load("assets/tiles_normal.png");
-	let ceiling_tex_diffuse = textures.load("assets/concrete_diffuse.png");
-	let ceiling_tex_normal = textures.load("assets/concrete_normal.png");
+	let wall_tex_diffuse = textures.load("wall_diffuse.png");
+	let wall_tex_normal = textures.load("wall_normal.png");
+	let floor_tex_diffuse = textures.load("tiles_diffuse.png");
+	let floor_tex_normal = textures.load("tiles_normal.png");
+	let ceiling_tex_diffuse = textures.load("concrete_diffuse.png");
+	let ceiling_tex_normal = textures.load("concrete_normal.png");
 
 	cmd.insert_resource(MazeAssets {
 		shader,
