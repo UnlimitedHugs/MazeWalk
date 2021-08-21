@@ -1,4 +1,5 @@
-[Play online](https://unlimitedhugs.github.io/maze-walk/) or [get the desktop version](https://github.com/UnlimitedHugs/MazeWalk/releases/latest).
+### [Play online](https://unlimitedhugs.github.io/maze-walk/)  
+Or [get the desktop version](https://github.com/UnlimitedHugs/MazeWalk/releases/latest).
 
 Homage to the classic Windows 95 Maze screensaver.
 
