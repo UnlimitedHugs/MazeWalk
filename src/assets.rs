@@ -182,15 +182,7 @@ type LoaderCallback = Box<dyn Fn(Result<Vec<u8>, String>) + Send + Sync + 'stati
 struct MiniquadFileLoader;
 impl FileLoader for MiniquadFileLoader {
 	fn load(&mut self, path: &str, callback: LoaderCallback) {
-		#[cfg(target_arch = "wasm32")]
-		const BASE_PATH: &str = "assets/";
-		#[cfg(not(target_arch = "wasm32"))]
-		const BASE_PATH: &str = "pkg/assets/";
-
-		let file_path = [BASE_PATH, path].join("");
-		miniquad::fs::load_file(&file_path, move |res| {
-			callback(res.map_err(|e| e.to_string()))
-		})
+		miniquad::fs::load_file(path, move |res| callback(res.map_err(|e| e.to_string())))
 	}
 }
 
