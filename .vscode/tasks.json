@@ -39,65 +39,17 @@
 			"label": "rust: cargo test nocapture"
 		},
 		{
-			"type": "cargo",
-			"command": "build",
-			"args": [
-				"--release",
-				"--no-default-features",
-			],
-			"problemMatcher": [
-				"$rustc"
-			],
-			"label": "rust: build release"
-		},
-		{
-			"label": "rust: build wasm (release)",
-			"type": "cargo",
-			"command": "build",
-			"args": [
-				"--target",
-				"wasm32-unknown-unknown",
-				"--release"
-			],
+			"label": "build wasm (release)",
+			"type": "shell",
+			"command": "./scripts/build-wasm.sh",
 			"problemMatcher": [
 				"$rustc"
 			]
 		},
 		{
-			"label": "deploy wasm (release)",
-			"type": "shell",
-			"command": "cp",
-			"args": [
-				"./target/wasm32-unknown-unknown/release/${workspaceFolderBasename}.wasm",
-				"./pkg/${workspaceFolderBasename}.wasm"
-			],
-			"dependsOn": [
-				"rust: build wasm (release)"
-			],
-			"problemMatcher": []
-		},
-		{
 			"label": "serve wasm",
 			"type": "shell",
-			"command": "penguin",
-			"args": [
-				"serve",
-				"./pkg",
-				"--mount",
-				"assets:assets",
-			],
-			"problemMatcher": []
-		},
-		{
-			"label": "optimize wasm",
-			"type": "shell",
-			"command": "wasm-opt",
-			"args": [
-				"pkg/maze_walk.wasm",
-				"-o",
-				"pkg/maze_walk.wasm",
-				"-O4",
-			],
+			"command": "./scripts/serve.sh",
 			"problemMatcher": []
 		},
 	]
